@@ -1,5 +1,19 @@
-pi-glass
+# pi-glass
 
+Lightweight network monitor for Raspberry Pi Zero. Single Rust binary, zero-JS dashboard with Fluent 2 styling.
+
+## Features
+
+- **LAN host monitoring** — ICMP ping every 30s with full stats (uptime %, avg/min/max latency, packet loss across 1h/24h/7d windows, current streak)
+- **External service checks** — ping (ICMP), dns (raw UDP query), tcp (connect latency). Configurable targets with built-in or custom icons
+- **Collapsible cards** — hosts auto-collapse when 100% up for the last hour; Web and DNS service cards with up/total summaries
+- **TOML config** — LAN hosts, external services, listen addr, db path, poll intervals, retention
+- **Fluent 2 styling** — tokens extracted at build time via Node.js, embedded via `include_str!`
+- **Auto-refresh** — `<meta http-equiv="refresh" content="30">`
+
+## Project structure
+
+```
 pi-glass/
 ├── .cargo/config.toml          # cross-compile linker config (musl)
 ├── .gitignore                  # /target, *.db, node_modules, web/dist
@@ -13,27 +27,21 @@ pi-glass/
     ├── package.json            # @fluentui/tokens dependency
     ├── build.js                # extracts 459 Fluent 2 tokens → dist/tokens.css
     └── dist/tokens.css         # generated (gitignored)
+```
 
-Key features:
+## Cross-compilation
 
-- TOML config at /opt/pi-glass/config.toml — LAN hosts, external services, listen addr, db path, intervals, retention
-- LAN host monitoring — ICMP ping every 30s with full stats (uptime %, avg/min/max latency, packet loss % across 1h/24h/7d windows, current streak)
-- External service checks — ping (ICMP), dns (raw UDP query), tcp (connect latency). Configurable targets with built-in or custom base64 icons
-- Fluent 2 styling — tokens extracted at build time via Node.js, embedded via include_str!, zero runtime JS (except ~15 lines for mobile overlay)
-- Auto-refresh via <meta http-equiv="refresh" content="30">
+Pi Zero is ARMv6. Ubuntu's `arm-linux-gnueabihf` toolchain ships ARMv7 CRT files which produce binaries that segfault on Pi Zero. We use musl instead for a fully static binary:
 
-Cross-compilation:
+| | |
+|---|---|
+| **Target** | `arm-unknown-linux-musleabihf` |
+| **Toolchain** | [musl.cc](https://musl.cc/) cross-compiler |
+| **Install to** | `~/.local/arm-linux-musleabihf-cross/` |
 
-Pi Zero is ARMv6. Ubuntu's arm-linux-gnueabihf toolchain ships ARMv7 CRT
-files which produce binaries that segfault on Pi Zero. We use musl instead
-for a fully static binary:
+## Build & deploy
 
-  Target:   arm-unknown-linux-musleabihf
-  Toolchain: musl.cc cross-compiler (https://musl.cc/)
-  Install to: ~/.local/arm-linux-musleabihf-cross/
-
-To build & deploy:
-
+```bash
 # Generate CSS tokens (one-time)
 cd web && npm install && npm run build && cd ..
 
@@ -52,4 +60,7 @@ cargo build --release
 scp target/arm-unknown-linux-musleabihf/release/pi-glass pi@<ip>:/opt/pi-glass/
 scp deploy/config.toml pi@<ip>:/opt/pi-glass/
 scp deploy/pi-glass.service pi@<ip>:/etc/systemd/system/
-# Then: sudo systemctl daemon-reload && sudo systemctl enable --now pi-glass
+
+# Enable service
+sudo systemctl daemon-reload && sudo systemctl enable --now pi-glass
+```
