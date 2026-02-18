@@ -30,10 +30,16 @@ body {
     max-width: 960px;
     margin: 0 auto;
 }
+.title-bar {
+    display: flex;
+    align-items: center;
+    gap: var(--spacingHorizontalXXL);
+    margin-bottom: var(--spacingVerticalXXL);
+    flex-wrap: wrap;
+}
 h1 {
     font-size: var(--fontSizeHero700);
     font-weight: var(--fontWeightSemibold);
-    margin-bottom: var(--spacingVerticalXXL);
 }
 .host-card {
     background: var(--colorNeutralCardBackground);
@@ -110,8 +116,8 @@ tr:last-child td { border-bottom: none; }
 .services-grid {
     display: flex;
     flex-wrap: wrap;
-    gap: var(--spacingVerticalM) var(--spacingHorizontalXXL);
-    padding: var(--spacingVerticalM) var(--spacingHorizontalL);
+    align-items: center;
+    gap: var(--spacingVerticalS) var(--spacingHorizontalL);
 }
 .svc-item {
     position: relative;
@@ -255,6 +261,8 @@ struct Service {
 
 #[derive(Deserialize)]
 struct Config {
+    #[serde(default = "default_name")]
+    name: String,
     #[serde(default = "default_listen")]
     listen: String,
     #[serde(default = "default_db_path")]
@@ -271,6 +279,7 @@ struct Config {
     services: Vec<Service>,
 }
 
+fn default_name() -> String { "pi-glass".to_string() }
 fn default_listen() -> String { DEFAULT_LISTEN.to_string() }
 fn default_db_path() -> String { DEFAULT_DB_PATH.to_string() }
 fn default_poll_interval() -> u64 { DEFAULT_POLL_INTERVAL_SECS }
@@ -287,6 +296,7 @@ fn default_hosts() -> Vec<Host> {
 impl Default for Config {
     fn default() -> Self {
         Self {
+            name: default_name(),
             listen: default_listen(),
             db_path: default_db_path(),
             poll_interval_secs: default_poll_interval(),
@@ -520,12 +530,11 @@ fn query_window_stats(db: &Connection, host: &str, minutes: i64) -> WindowStats 
 
     stmt.query_row(params![host, cutoff], |row| {
         let total: i64 = row.get(0)?;
-        let up_count: i64 = row.get(1)?;
+        let up_count: Option<i64> = row.get(1)?;
         Ok(WindowStats {
-            uptime_pct: if total > 0 {
-                Some(up_count as f64 * 100.0 / total as f64)
-            } else {
-                None
+            uptime_pct: match (total, up_count) {
+                (t, Some(u)) if t > 0 => Some(u as f64 * 100.0 / t as f64),
+                _ => None,
             },
             avg_ms: row.get(2)?,
             min_ms: row.get(3)?,
@@ -683,9 +692,7 @@ fn render_services(db: &Connection, services: &[Service]) -> String {
         return String::new();
     }
 
-    let mut html = String::from(
-        r#"<div class="host-card"><div class="host-header"><h2>External Services</h2></div><div class="services-grid">"#,
-    );
+    let mut html = String::new();
 
     for (i, svc) in services.iter().enumerate() {
         let key = format!("svc:{}", svc.label);
@@ -750,12 +757,14 @@ fn render_services(db: &Connection, services: &[Service]) -> String {
         ));
     }
 
-    html.push_str("</div></div>");
     html
 }
 
 async fn handler(State(state): State<Arc<AppState>>) -> Html<String> {
     let db = state.db.lock().unwrap();
+
+    let services_html = render_services(&db, &state.config.services);
+    let name = &state.config.name;
 
     let mut html = format!(
         r#"<!DOCTYPE html>
@@ -763,16 +772,16 @@ async fn handler(State(state): State<Arc<AppState>>) -> Html<String> {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="refresh" content="30">
-<title>pi-glass</title>
+<title>{name}</title>
 <style>{TOKENS_CSS}</style>
 <style>{APP_CSS}</style>
 </head><body>
-<h1>pi-glass</h1>
+<div class="title-bar">
+<h1>{name}</h1>
+<div class="services-grid">{services_html}</div>
+</div>
 "#
     );
-
-    // Services bar first
-    html.push_str(&render_services(&db, &state.config.services));
 
     // LAN host cards
     for host in &state.config.hosts {

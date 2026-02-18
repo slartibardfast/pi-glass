@@ -1,3 +1,4 @@
+name = "pi-glass"
 listen = "0.0.0.0:8080"
 db_path = "/opt/pi-glass/pi-glass.db"
 poll_interval_secs = 30
