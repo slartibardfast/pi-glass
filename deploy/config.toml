@@ -47,10 +47,52 @@ check = "tcp"
 target = "www.digiweb.ie:443"
 
 [[services]]
+label = "DkIT"
+icon = "dkit"
+check = "tcp"
+target = "dkit.ie:443"
+
+[[services]]
+label = "YouTube"
+icon = "youtube"
+check = "tcp"
+target = "youtube.com:443"
+
+[[services]]
+label = "Outlook"
+icon = "outlook"
+check = "tcp"
+target = "outlook.com:443"
+
+[[services]]
+label = "Cloudflare"
+icon = "cloudflare"
+check = "tcp"
+target = "cloudflare.com:443"
+
+[[services]]
+label = "WhatsApp"
+icon = "whatsapp"
+check = "tcp"
+target = "web.whatsapp.com:443"
+
+[[services]]
 label = "Cloudflare DNS"
 icon = "cloudflare"
 check = "dns"
 target = "1.1.1.1"
+
+[[services]]
+label = "Google DNS"
+icon = "google"
+check = "dns"
+target = "8.8.8.8"
+
+[[services]]
+label = "Quad9 DNS"
+icon = "dns"
+check = "dns"
+target = "9.9.9.9"
 
 [[services]]
 label = "ISP DNS 1"

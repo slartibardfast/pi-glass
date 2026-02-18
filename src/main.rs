@@ -31,14 +31,11 @@ body {
     margin: 0 auto;
 }
 .title-bar {
-    display: flex;
-    align-items: center;
-    gap: var(--spacingHorizontalXXL);
     margin-bottom: var(--spacingVerticalXXL);
-    flex-wrap: wrap;
 }
 h1 {
     font-size: var(--fontSizeHero700);
+    margin-bottom: var(--spacingVerticalM);
     font-weight: var(--fontWeightSemibold);
 }
 .host-card {
@@ -56,7 +53,10 @@ h1 {
     padding: var(--spacingVerticalM) var(--spacingHorizontalL);
     border-bottom: 1px solid var(--colorNeutralStroke2);
     background: var(--colorNeutralBackground3);
+    cursor: pointer;
+    list-style: none;
 }
+.host-header::-webkit-details-marker { display: none; }
 .host-header h2 {
     font-size: var(--fontSizeBase500);
     font-weight: var(--fontWeightSemibold);
@@ -64,6 +64,9 @@ h1 {
 .host-header .ip {
     color: var(--colorNeutralForeground2);
     font-weight: var(--fontWeightRegular);
+    display: block;
+    text-align: center;
+    font-size: var(--fontSizeBase300);
 }
 .streak {
     font-size: var(--fontSizeBase200);
@@ -114,24 +117,25 @@ tr:last-child td { border-bottom: none; }
 
 /* Services bar */
 .services-grid {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: 20px 12px 1fr auto;
+    gap: var(--spacingVerticalXS) var(--spacingHorizontalXS);
     align-items: center;
-    gap: var(--spacingVerticalS) var(--spacingHorizontalL);
 }
 .svc-item {
+    display: grid;
+    grid-template-columns: subgrid;
+    grid-column: 1 / -1;
     position: relative;
-    display: flex;
-    align-items: center;
-    gap: var(--spacingHorizontalS);
     cursor: pointer;
+    align-items: center;
 }
-.svc-icon svg { width: 20px; height: 20px; display: block; }
+.svc-icon svg, .svc-icon img { width: 20px; height: 20px; display: block; }
 .svc-dot {
     width: 10px;
     height: 10px;
     border-radius: 50%;
-    flex-shrink: 0;
+    justify-self: center;
 }
 .svc-dot.up { background: var(--colorStatusSuccessForeground1); }
 .svc-dot.down { background: var(--colorStatusDangerForeground1); }
@@ -139,18 +143,41 @@ tr:last-child td { border-bottom: none; }
 .svc-label {
     font-size: var(--fontSizeBase200);
     font-weight: var(--fontWeightSemibold);
+    white-space: nowrap;
 }
 .svc-latency {
     font-size: var(--fontSizeBase100);
     color: var(--colorNeutralForeground2);
+    text-align: right;
+}
+.svc-card {
+    background: var(--colorNeutralCardBackground);
+    border: 1px solid var(--colorNeutralStroke2);
+    border-radius: var(--borderRadiusLarge);
+    box-shadow: var(--shadow4);
+    margin-bottom: var(--spacingVerticalL);
+}
+.svc-card > summary {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--spacingVerticalS) var(--spacingHorizontalL);
+    background: var(--colorNeutralBackground3);
+    border-bottom: 1px solid var(--colorNeutralStroke2);
+    cursor: pointer;
+    list-style: none;
+    font-size: var(--fontSizeBase400);
+    font-weight: var(--fontWeightSemibold);
+}
+.svc-card > summary::-webkit-details-marker { display: none; }
+.svc-card .services-grid {
+    padding: var(--spacingVerticalS) var(--spacingHorizontalL);
 }
 
-/* Service detail tooltip (desktop) */
+/* Service detail tooltip */
 .svc-detail {
     display: none;
-    position: absolute;
-    top: calc(100% + 4px);
-    left: 0;
+    position: fixed;
     z-index: 10;
     background: var(--colorNeutralCardBackground);
     border: 1px solid var(--colorNeutralStroke2);
@@ -158,8 +185,8 @@ tr:last-child td { border-bottom: none; }
     box-shadow: var(--shadow16);
     padding: var(--spacingVerticalM) var(--spacingHorizontalM);
     min-width: 300px;
+    max-width: 400px;
 }
-.svc-item:hover .svc-detail { display: block; }
 .svc-detail.open { display: block; }
 .svc-detail-header {
     display: flex;
@@ -170,7 +197,7 @@ tr:last-child td { border-bottom: none; }
 }
 .svc-detail-header strong { font-size: var(--fontSizeBase300); }
 .svc-detail-header .svc-target { color: var(--colorNeutralForeground2); }
-.svc-close { display: none; background: none; border: none; font-size: 20px; cursor: pointer; color: var(--colorNeutralForeground2); }
+.svc-close { background: none; border: none; font-size: 20px; cursor: pointer; color: var(--colorNeutralForeground2); }
 .svc-detail-stats {
     display: flex;
     gap: var(--spacingHorizontalL);
@@ -185,20 +212,17 @@ tr:last-child td { border-bottom: none; }
 
 /* Mobile overlay */
 @media (max-width: 768px) {
-    .svc-item:hover .svc-detail { display: none; }
     .svc-detail.open {
-        display: block;
-        position: fixed;
         bottom: 0; left: 0; right: 0;
         top: auto;
         border-radius: var(--borderRadiusLarge) var(--borderRadiusLarge) 0 0;
         box-shadow: var(--shadow28);
         max-height: 60vh;
+        max-width: none;
         overflow-y: auto;
         padding: var(--spacingVerticalL);
         z-index: 11;
     }
-    .svc-close { display: block; }
 }
 .svc-backdrop {
     display: none;
@@ -208,22 +232,42 @@ tr:last-child td { border-bottom: none; }
     z-index: 9;
 }
 .svc-backdrop.open { display: block; }
+footer {
+    text-align: center;
+    padding: var(--spacingVerticalXXL) 0 var(--spacingVerticalM);
+    font-size: var(--fontSizeBase200);
+    color: var(--colorNeutralForeground3);
+}
+footer a { color: var(--colorBrandForeground1); text-decoration: none; }
+footer a:hover { text-decoration: underline; }
 "#;
 
 const INLINE_JS: &str = r#"
-function openDetail(id){
+function openDetail(id,anchor){
     closeDetail();
-    document.getElementById(id).classList.add('open');
+    var d=document.getElementById(id);
+    d.classList.add('open');
     document.getElementById('svc-backdrop').classList.add('open');
+    if(window.innerWidth>768&&anchor){
+        var r=anchor.getBoundingClientRect();
+        var top=r.bottom+4;
+        if(top+300>window.innerHeight){top=r.top-304}
+        d.style.top=top+'px';
+        d.style.left=Math.max(8,Math.min(r.left,window.innerWidth-320))+'px';
+    }
 }
 function closeDetail(){
-    document.querySelectorAll('.svc-detail.open').forEach(function(e){e.classList.remove('open')});
+    document.querySelectorAll('.svc-detail.open').forEach(function(e){e.classList.remove('open');e.style.top='';e.style.left=''});
     document.getElementById('svc-backdrop').classList.remove('open');
 }
 document.querySelectorAll('.svc-item').forEach(function(el){
-    el.addEventListener('click',function(e){
-        if(window.innerWidth<=768){e.stopPropagation();openDetail(el.dataset.svc)}
-    });
+    el.addEventListener('click',function(){openDetail(el.dataset.svc,el)});
+});
+document.querySelectorAll('.svc-detail').forEach(function(d){
+    d.addEventListener('click',function(e){e.stopPropagation()});
+});
+document.querySelectorAll('.svc-close').forEach(function(b){
+    b.addEventListener('click',function(e){e.stopPropagation();closeDetail()});
 });
 document.getElementById('svc-backdrop').addEventListener('click',closeDetail);
 "#;
@@ -398,7 +442,8 @@ async fn check_ping(client: &Client, target: &str, seq: u16, timeout_secs: u64) 
 
 async fn check_dns(nameserver: &str, timeout_secs: u64) -> (bool, Option<f64>) {
     let addr = format!("{nameserver}:53");
-    let sock = match tokio::net::UdpSocket::bind("0.0.0.0:0").await {
+    let bind_addr = if nameserver.contains(':') { "[::]:0" } else { "0.0.0.0:0" };
+    let sock = match tokio::net::UdpSocket::bind(bind_addr).await {
         Ok(s) => s,
         Err(_) => return (false, None),
     };
@@ -609,6 +654,10 @@ fn get_icon_svg(key: &str) -> &'static str {
         "heanet" => r##"<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect width="24" height="24" rx="4" fill="#00594F"/><text x="12" y="16" text-anchor="middle" font-size="11" font-weight="bold" fill="white" font-family="sans-serif">HE</text></svg>"##,
         "digiweb" => r##"<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect width="24" height="24" rx="4" fill="#E31937"/><text x="12" y="16" text-anchor="middle" font-size="10" font-weight="bold" fill="white" font-family="sans-serif">DW</text></svg>"##,
         "digiweb-dns" => r##"<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect width="24" height="24" rx="4" fill="#E31937" opacity="0.7"/><text x="12" y="12" text-anchor="middle" font-size="7" font-weight="bold" fill="white" font-family="sans-serif">DW</text><text x="12" y="20" text-anchor="middle" font-size="7" font-weight="bold" fill="white" font-family="sans-serif">NS</text></svg>"##,
+        "dkit" => r##"<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect width="24" height="24" rx="4" fill="#003B5C"/><text x="12" y="10" text-anchor="middle" font-size="6.5" font-weight="bold" fill="white" font-family="sans-serif">DkIT</text><rect x="3" y="13" width="18" height="2" rx="1" fill="#8DC63F"/></svg>"##,
+        "youtube" => r##"<img style="width:20px;height:20px" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAABr0lEQVRYhe3Xv48MYQDG8c87uTjubkmEjd+hkEs0crfRiUahYVfhDxCUCpVoVBKiENGKnEKiccUFEY2C2uxFIuQo/CgUGw171p5iRzEzCiGxs5sdxT3J5H0zmed9vsX7zjwTkiRRpqJS01cB/geAkE8StXEcxSx2o4oKJrNxQ/Z8wPq/rPcVCXrZvI1v2djCezTxMIhXfgEkavuxkAWPQh/QCOIXIVFbhzfYMaLwXB8xHeF4CeGwC/UIB0oIz3Uwwr4SAfZG2N6XpbqR0w2ioZzgrRE29WWZWMutizy/w6HZQQGqEaYKWWemeXqTe1fZs60owFRxgFwnDvN6nitnqUz0664M51U8voYLJ3m7wKl6X/uj9G/B2FBWWfnB9btcnqPd6Rtg2SD7YP4J52/w7lMRd7s4wOIS567xrFkkONfyGD5jyz9bOl3OXOL2A3q9QcKhFRK1xzgy6EoF9SjCq5LC4WWEuESAZl5IlrBzxOFpIQni7zgm7WujDK8Hcff3UtrAjLQbbpaWz8nsyktpJC2pf1JeShN8kR7xTna/Je2Ci7gfxF0Iq79mqwBlA/wEihVj07SFCdQAAAAASUVORK5CYII=">"##,
+        "outlook" => r##"<img style="width:20px;height:20px" src="data:image/png;base64,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">"##,
+        "whatsapp" => r##"<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect width="24" height="24" rx="4" fill="#25D366"/><path d="M17.5 14.4c-.3-.15-1.7-.84-2-.94-.3-.1-.5-.15-.7.15-.2.3-.75.94-.9 1.13-.17.2-.33.22-.63.07-.3-.15-1.25-.46-2.38-1.47-.88-.78-1.47-1.75-1.64-2.05-.17-.3-.02-.46.13-.61.13-.13.3-.34.44-.51.15-.17.2-.3.3-.49.1-.2.05-.37-.03-.52-.07-.15-.68-1.64-.93-2.24-.25-.6-.5-.52-.68-.53h-.58c-.2 0-.52.07-.8.37-.27.3-1.04 1.02-1.04 2.49s1.07 2.89 1.22 3.09c.15.2 2.1 3.2 5.08 4.49.71.31 1.27.49 1.7.63.71.23 1.36.2 1.87.12.57-.09 1.7-.7 1.94-1.37.24-.68.24-1.26.17-1.38-.08-.12-.27-.2-.57-.34z" fill="white"/><path d="M12 2C6.48 2 2 6.48 2 12c0 1.77.47 3.44 1.28 4.88L2 22l5.27-1.38C8.69 21.52 10.3 22 12 22c5.52 0 10-4.48 10-10S17.52 2 12 2zm0 18c-1.5 0-2.94-.4-4.2-1.15l-.3-.18-3.12.82.83-3.04-.2-.31A7.94 7.94 0 014 12c0-4.41 3.59-8 8-8s8 3.59 8 8-3.59 8-8 8z" fill="white" opacity="0.3"/></svg>"##,
         "cloudflare" => r##"<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect width="24" height="24" rx="4" fill="#F48120"/><text x="12" y="16" text-anchor="middle" font-size="10" font-weight="bold" fill="white" font-family="sans-serif">CF</text></svg>"##,
         "dns" => r##"<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect width="24" height="24" rx="4" fill="#5B5FC7"/><text x="12" y="16" text-anchor="middle" font-size="10" font-weight="bold" fill="white" font-family="sans-serif">NS</text></svg>"##,
         _ => r##"<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect width="24" height="24" rx="4" fill="#888"/><text x="12" y="16" text-anchor="middle" font-size="10" font-weight="bold" fill="white" font-family="sans-serif">?</text></svg>"##,
@@ -636,12 +685,15 @@ fn render_host(db: &Connection, host: &Host) -> String {
     let loss_24h = w24h.uptime_pct.map(|u| 100.0 - u);
     let loss_7d = w7d.uptime_pct.map(|u| 100.0 - u);
 
+    let all_up_1h = w1h.uptime_pct.map_or(true, |p| p >= 100.0);
+    let open_attr = if all_up_1h { "" } else { " open" };
+
     let mut html = format!(
-        r#"<div class="host-card">
-<div class="host-header">
+        r#"<details class="host-card"{open_attr}>
+<summary class="host-header">
   <h2>{} <span class="ip">({})</span></h2>
   {streak_display}
-</div>
+</summary>
 <div class="stats-section">
 <table>
 <tr><th></th><th>1 hour</th><th>24 hours</th><th>7 days</th></tr>
@@ -683,60 +735,49 @@ fn render_host(db: &Connection, host: &Host) -> String {
         ));
     }
 
-    html.push_str("</table></div>");
+    html.push_str("</table></details>");
     html
 }
 
-fn render_services(db: &Connection, services: &[Service]) -> String {
-    if services.is_empty() {
-        return String::new();
+fn render_service_item(db: &Connection, svc: &Service, id: &str) -> String {
+    let key = format!("svc:{}", svc.label);
+    let (status, latency) = query_latest_status(db, &key);
+    let dot_class = match status.as_str() {
+        "UP" => "up",
+        "DOWN" => "down",
+        _ => "unknown",
+    };
+    let icon_html = if let Some(data) = &svc.icon_data {
+        format!(r#"<img style="width:20px;height:20px" src="{data}">"#)
+    } else {
+        get_icon_svg(&svc.icon).to_string()
+    };
+    let latency_str = latency.map_or("--".to_string(), |ms| format!("{ms:.0}ms"));
+
+    // Query detail data
+    let w1h = query_window_stats(db, &key, 60);
+    let recent = query_recent_checks(db, &key, 10);
+
+    let mut detail_rows = String::new();
+    for (ts, s, lat) in &recent {
+        let cls = if s == "UP" { "status-up" } else { "status-down" };
+        let lat_str = lat.map_or("--".to_string(), |v| format!("{v:.1}"));
+        let time = if ts.len() > 11 { &ts[11..19] } else { ts };
+        detail_rows.push_str(&format!(
+            r#"<tr><td>{time}</td><td class="{cls}">{s}</td><td>{lat_str}</td></tr>"#
+        ));
     }
 
-    let mut html = String::new();
-
-    for (i, svc) in services.iter().enumerate() {
-        let key = format!("svc:{}", svc.label);
-        let id = format!("svc-{i}");
-        let (status, latency) = query_latest_status(db, &key);
-        let dot_class = match status.as_str() {
-            "UP" => "up",
-            "DOWN" => "down",
-            _ => "unknown",
-        };
-        let icon_html = if let Some(data) = &svc.icon_data {
-            format!(r#"<img style="width:20px;height:20px" src="{data}">"#)
-        } else {
-            get_icon_svg(&svc.icon).to_string()
-        };
-        let latency_str = latency.map_or(String::new(), |ms| {
-            format!(r#" <span class="svc-latency">{ms:.0}ms</span>"#)
-        });
-
-        // Query detail data
-        let w1h = query_window_stats(db, &key, 60);
-        let recent = query_recent_checks(db, &key, 10);
-
-        // Build detail table rows
-        let mut detail_rows = String::new();
-        for (ts, s, lat) in &recent {
-            let cls = if s == "UP" { "status-up" } else { "status-down" };
-            let lat_str = lat.map_or("--".to_string(), |v| format!("{v:.1}"));
-            // Show just time portion for compactness
-            let time = if ts.len() > 11 { &ts[11..19] } else { ts };
-            detail_rows.push_str(&format!(
-                r#"<tr><td>{time}</td><td class="{cls}">{s}</td><td>{lat_str}</td></tr>"#
-            ));
-        }
-
-        html.push_str(&format!(
-            r#"<div class="svc-item" data-svc="{id}">
+    format!(
+        r#"<div class="svc-item" data-svc="{id}">
 <span class="svc-icon">{icon_html}</span>
 <span class="svc-dot {dot_class}"></span>
-<span class="svc-label">{}{latency_str}</span>
+<span class="svc-label">{}</span>
+<span class="svc-latency">{latency_str}</span>
 <div class="svc-detail" id="{id}">
 <div class="svc-detail-header">
 <div><strong>{}</strong> <span class="svc-target">{} &rarr; {}</span></div>
-<button class="svc-close" onclick="closeDetail()">&times;</button>
+<button class="svc-close" >&times;</button>
 </div>
 <div class="svc-detail-stats">
 <span>Uptime 1h: {}</span>
@@ -748,15 +789,52 @@ fn render_services(db: &Connection, services: &[Service]) -> String {
 </table>
 </div>
 </div>"#,
-            svc.label,
-            svc.label,
-            svc.check,
-            svc.target,
-            fmt_pct(w1h.uptime_pct),
-            fmt_ms(w1h.avg_ms),
-        ));
+        svc.label,
+        svc.label,
+        svc.check,
+        svc.target,
+        fmt_pct(w1h.uptime_pct),
+        fmt_ms(w1h.avg_ms),
+    )
+}
+
+fn render_service_card(db: &Connection, title: &str, svcs: &[&Service], start_idx: usize) -> String {
+    if svcs.is_empty() {
+        return String::new();
     }
 
+    let up_count = svcs.iter().filter(|s| {
+        let key = format!("svc:{}", s.label);
+        let (status, _) = query_latest_status(db, &key);
+        status == "UP"
+    }).count();
+    let total = svcs.len();
+    let summary_class = if up_count == total { "status-up" } else { "status-down" };
+    let summary_text = format!(r#"<span class="{summary_class}">{up_count}/{total}</span>"#);
+
+    let mut html = format!(
+        r#"<details class="svc-card" open><summary>{title} {summary_text}</summary><div class="services-grid">"#
+    );
+    for (i, svc) in svcs.iter().enumerate() {
+        let id = format!("svc-{}", start_idx + i);
+        html.push_str(&render_service_item(db, svc, &id));
+    }
+    html.push_str("</div></details>");
+    html
+}
+
+fn render_services(db: &Connection, services: &[Service]) -> String {
+    if services.is_empty() {
+        return String::new();
+    }
+
+    let mut non_dns: Vec<&Service> = services.iter().filter(|s| s.check != "dns").collect();
+    let mut dns: Vec<&Service> = services.iter().filter(|s| s.check == "dns").collect();
+    non_dns.sort_by(|a, b| a.label.to_lowercase().cmp(&b.label.to_lowercase()));
+    dns.sort_by(|a, b| a.label.to_lowercase().cmp(&b.label.to_lowercase()));
+
+    let mut html = render_service_card(db, "Web", &non_dns, 0);
+    html.push_str(&render_service_card(db, "DNS", &dns, non_dns.len()));
     html
 }
 
@@ -778,7 +856,7 @@ async fn handler(State(state): State<Arc<AppState>>) -> Html<String> {
 </head><body>
 <div class="title-bar">
 <h1>{name}</h1>
-<div class="services-grid">{services_html}</div>
+{services_html}
 </div>
 "#
     );
@@ -787,6 +865,9 @@ async fn handler(State(state): State<Arc<AppState>>) -> Html<String> {
     for host in &state.config.hosts {
         html.push_str(&render_host(&db, host));
     }
+
+    // Footer
+    html.push_str(r##"<footer>Made with &#10084;&#65039; by <a href="mailto:david@connol.ly">David Connolly</a> &amp; <a href="https://claude.ai">Claude</a> &middot; <a href="https://github.com/slartibardfast/pi-glass">pi-glass</a></footer>"##);
 
     // Mobile backdrop + inline JS
     html.push_str(r#"<div id="svc-backdrop" class="svc-backdrop"></div>"#);
