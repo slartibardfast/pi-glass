@@ -1,0 +1,13 @@
+[package]
+name = "pi-glass"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+axum = "0.8"
+rusqlite = { version = "0.32", features = ["bundled"] }
+surge-ping = "0.8"
+chrono = "0.4"
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"

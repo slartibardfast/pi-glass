@@ -1,0 +1,15 @@
+[Unit]
+Description=pi-glass Network Monitor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/opt/pi-glass/pi-glass
+WorkingDirectory=/opt/pi-glass
+Restart=always
+RestartSec=5
+AmbientCapabilities=CAP_NET_RAW
+
+[Install]
+WantedBy=multi-user.target

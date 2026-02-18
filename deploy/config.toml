@@ -1,0 +1,64 @@
+listen = "0.0.0.0:8080"
+db_path = "/opt/pi-glass/pi-glass.db"
+poll_interval_secs = 30
+ping_timeout_secs = 2
+retention_days = 7
+
+[[hosts]]
+addr = "192.168.178.1"
+label = "Router"
+
+[[hosts]]
+addr = "192.168.178.6"
+label = "AP 1"
+
+[[hosts]]
+addr = "192.168.178.7"
+label = "AP 2"
+
+# External service checks
+# icon: built-in key (google, bing, heanet, digiweb, digiweb-dns, cloudflare, dns)
+# icon_data: optional base64 data URI overrides icon (e.g. "data:image/png;base64,...")
+# check: "ping" (ICMP), "dns" (UDP query), "tcp" (TCP connect)
+
+[[services]]
+label = "Google"
+icon = "google"
+check = "ping"
+target = "google.com"
+
+[[services]]
+label = "Bing"
+icon = "bing"
+check = "tcp"
+target = "bing.com:443"
+
+[[services]]
+label = "HEAnet"
+icon = "heanet"
+check = "tcp"
+target = "heanet.ie:443"
+
+[[services]]
+label = "Digiweb"
+icon = "digiweb"
+check = "tcp"
+target = "www.digiweb.ie:443"
+
+[[services]]
+label = "Cloudflare DNS"
+icon = "cloudflare"
+check = "dns"
+target = "1.1.1.1"
+
+[[services]]
+label = "ISP DNS 1"
+icon = "digiweb-dns"
+check = "dns"
+target = "83.147.160.2"
+
+[[services]]
+label = "ISP DNS 2"
+icon = "digiweb-dns"
+check = "dns"
+target = "83.147.160.130"

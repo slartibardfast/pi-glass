@@ -1,0 +1,3 @@
+[target.arm-unknown-linux-musleabihf]
+linker = "/home/david/.local/arm-linux-musleabihf-cross/bin/arm-linux-musleabihf-gcc"
+rustflags = ["-C", "target-feature=+crt-static"]
