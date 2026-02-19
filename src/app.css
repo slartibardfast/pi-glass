@@ -63,6 +63,8 @@ h1 {
     font-weight: var(--fontWeightSemibold);
     padding: var(--spacingVerticalXS) var(--spacingHorizontalM);
     border-radius: var(--borderRadiusMedium);
+    min-width: 3.5em;
+    text-align: center;
 }
 .streak.tier-perfect, .streak.tier-good, .streak.tier-degraded, .streak.tier-critical, .streak.tier-down,
 span.tier-perfect, span.tier-good, span.tier-degraded, span.tier-critical, span.tier-down {

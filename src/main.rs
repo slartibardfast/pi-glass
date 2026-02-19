@@ -667,26 +667,32 @@ fn get_icon_svg(key: &str) -> &'static str {
 }
 
 fn render_stats_section(
-    w1h: &WindowStats, w24h: &WindowStats, w7d: &WindowStats,
+    w5m: &WindowStats, w1h: &WindowStats, w24h: &WindowStats, w7d: &WindowStats,
     pings_label: &str, time_col_label: &str, detail_rows: &str,
 ) -> String {
+    let loss_5m  = w5m.uptime_pct.map(|u| 100.0 - u);
     let loss_1h  = w1h.uptime_pct.map(|u| 100.0 - u);
     let loss_24h = w24h.uptime_pct.map(|u| 100.0 - u);
     let loss_7d  = w7d.uptime_pct.map(|u| 100.0 - u);
     format!(
         include_str!("templates/stats_section.html"),
+        uptime_5m  = fmt_pct(w5m.uptime_pct),
         uptime_1h  = fmt_pct(w1h.uptime_pct),
         uptime_24h = fmt_pct(w24h.uptime_pct),
         uptime_7d  = fmt_pct(w7d.uptime_pct),
+        avg_5m  = fmt_ms(w5m.avg_ms),
         avg_1h  = fmt_ms(w1h.avg_ms),
         avg_24h = fmt_ms(w24h.avg_ms),
         avg_7d  = fmt_ms(w7d.avg_ms),
+        min_5m  = fmt_ms(w5m.min_ms),
         min_1h  = fmt_ms(w1h.min_ms),
         min_24h = fmt_ms(w24h.min_ms),
         min_7d  = fmt_ms(w7d.min_ms),
+        max_5m  = fmt_ms(w5m.max_ms),
         max_1h  = fmt_ms(w1h.max_ms),
         max_24h = fmt_ms(w24h.max_ms),
         max_7d  = fmt_ms(w7d.max_ms),
+        loss_5m  = fmt_pct(loss_5m),
         loss_1h  = fmt_pct(loss_1h),
         loss_24h = fmt_pct(loss_24h),
         loss_7d  = fmt_pct(loss_7d),
@@ -699,9 +705,10 @@ fn render_stats_section(
 // --- HTML rendering ---
 
 fn render_host(db: &Connection, host: &Host, user_open: Option<bool>) -> String {
-    let w1h = query_window_stats(db, &host.addr, 60);
+    let w5m  = query_window_stats(db, &host.addr, 5);
+    let w1h  = query_window_stats(db, &host.addr, 60);
     let w24h = query_window_stats(db, &host.addr, 1440);
-    let w7d = query_window_stats(db, &host.addr, 10080);
+    let w7d  = query_window_stats(db, &host.addr, 10080);
     let tier = tier_class(w1h.uptime_pct);
     let (cur_status, _) = query_latest_status(db, &host.addr);
     let (h_avg_ms, h_stddev_ms) = query_avg_stddev(db, &host.addr, 60);
@@ -711,8 +718,9 @@ fn render_host(db: &Connection, host: &Host, user_open: Option<bool>) -> String 
         _                     => String::new(),
     };
     let streak_display = match w1h.uptime_pct {
-        Some(p) => format!(
-            r#"<span class="host-badge-group"><span class="streak {tier}">{cur_status} {p:.1}%</span>{latency_summary}</span>"#
+        Some(_) => format!(
+            r#"<span class="host-badge-group"><span class="streak {tier}">{cur_status} {}</span>{latency_summary}</span>"#,
+            fmt_pct(w1h.uptime_pct)
         ),
         None => r#"<span class="streak tier-down">--</span>"#.to_string(),
     };
@@ -733,7 +741,7 @@ fn render_host(db: &Connection, host: &Host, user_open: Option<bool>) -> String 
             r#"<tr><td>{ts}</td><td class="{class}">{status}</td><td>{latency_str}</td></tr>"#
         ));
     }
-    let stats_section = render_stats_section(&w1h, &w24h, &w7d, "Last 20 pings", "Timestamp", &detail_rows);
+    let stats_section = render_stats_section(&w5m, &w1h, &w24h, &w7d, "Last 20 pings", "Timestamp", &detail_rows);
 
     format!(
         include_str!("templates/host.html"),
@@ -771,14 +779,12 @@ fn render_service_item(db: &Connection, svc: &Service, id: &str, user_open: Opti
         _ => String::new(),
     };
 
+    let w5m  = query_window_stats(db, &key, 5);
     let w1h  = query_window_stats(db, &key, 60);
     let w24h = query_window_stats(db, &key, 1440);
     let w7d  = query_window_stats(db, &key, 10080);
     let tier = tier_class(w1h.uptime_pct);
-    let uptime_badge = match w1h.uptime_pct {
-        Some(p) => format!("{cur_status} {p:.1}%"),
-        None => "--".to_string(),
-    };
+    let uptime_badge = fmt_pct(w1h.uptime_pct);
     let open_attr = if user_open.unwrap_or(false) { " open" } else { "" };
 
     let recent = query_recent_checks(db, &key, 10);
@@ -791,7 +797,7 @@ fn render_service_item(db: &Connection, svc: &Service, id: &str, user_open: Opti
             r#"<tr><td>{time}</td><td class="{cls}">{s}</td><td>{lat_str}</td></tr>"#
         ));
     }
-    let stats_section = render_stats_section(&w1h, &w24h, &w7d, "Last 10 checks", "Time", &detail_rows);
+    let stats_section = render_stats_section(&w5m, &w1h, &w24h, &w7d, "Last 10 checks", "Time", &detail_rows);
 
     format!(
         include_str!("templates/service_item.html"),
@@ -825,7 +831,7 @@ fn render_service_card(db: &Connection, title: &str, svcs: &[&Service], start_id
     let card_uptime = query_card_uptime(db, &keys, 60);
     let tier = tier_class(card_uptime);
     let title_attr = match card_uptime {
-        Some(p) => format!("1h uptime: {p:.1}%"),
+        Some(_) => format!("1h uptime: {}", fmt_pct(card_uptime)),
         None    => "No data".to_string(),
     };
     let summary_text = format!(r#"<span class="{tier}" title="{title_attr}">{up_count}/{total}</span>"#);
