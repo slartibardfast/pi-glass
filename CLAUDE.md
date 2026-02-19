@@ -1,3 +1,9 @@
+# CLAUDE.md
+
+Tradeoffs: These Guidelines bias towards caution over speed. For trivial tasks, use judgment.
+
+0. "Work as if you live in the early days of a better nation".
+
 1. Think Before Coding
 Don't assume. Don't hide confusion. Surface tradeoffs.
 
@@ -32,3 +38,11 @@ When your changes create orphans:
 Remove imports/variables/functions that YOUR changes made unused.
 Don't remove pre-existing dead code unless asked.
 The test: Every changed line should trace directly to the user's request.
+
+4. Security: No HTTP Input to Disk
+This is a hard design constraint, not a guideline.
+
+No data from an HTTP request may ever be written to the server's filesystem.
+The web UI is read-only. Config is loaded at startup; there is no admin interface.
+The Windows bootstrap copy (exe-adjacent config.toml) is a local filesystem operation — not triggered by any HTTP request.
+If a feature would require writing HTTP-sourced data to disk, reject the design and propose a read-only alternative.
