@@ -867,9 +867,11 @@ fn render_services(db: &Connection, services: &[Service], ui: &UiCookie) -> Stri
         return String::new();
     }
 
-    let mut non_dns: Vec<&Service> = services.iter().filter(|s| s.check != "dns").collect();
-    let mut dns: Vec<&Service> = services.iter().filter(|s| s.check == "dns").collect();
-    non_dns.sort_by(|a, b| a.label.to_lowercase().cmp(&b.label.to_lowercase()));
+    let mut web: Vec<&Service>  = services.iter().filter(|s| s.check == "tcp").collect();
+    let mut icmp: Vec<&Service> = services.iter().filter(|s| s.check == "ping").collect();
+    let mut dns: Vec<&Service>  = services.iter().filter(|s| s.check == "dns").collect();
+    web.sort_by(|a, b| a.label.to_lowercase().cmp(&b.label.to_lowercase()));
+    icmp.sort_by(|a, b| a.label.to_lowercase().cmp(&b.label.to_lowercase()));
     dns.sort_by(|a, b| a.label.to_lowercase().cmp(&b.label.to_lowercase()));
 
     let svc_open = |title: &str| -> bool {
@@ -880,8 +882,9 @@ fn render_services(db: &Connection, services: &[Service], ui: &UiCookie) -> Stri
     };
 
     let open_items = ui.open_svc_items.as_ref();
-    let mut html = render_service_card(db, "Web", &non_dns, 0, svc_open("Web"), open_items);
-    html.push_str(&render_service_card(db, "DNS", &dns, non_dns.len(), svc_open("DNS"), open_items));
+    let mut html = render_service_card(db, "Web", &web, 0, svc_open("Web"), open_items);
+    html.push_str(&render_service_card(db, "ICMP", &icmp, web.len(), svc_open("ICMP"), open_items));
+    html.push_str(&render_service_card(db, "DNS", &dns, web.len() + icmp.len(), svc_open("DNS"), open_items));
     html
 }
 
