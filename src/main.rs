@@ -45,11 +45,70 @@ fn parse_ui_cookie(headers: &axum::http::HeaderMap) -> UiCookie {
 }
 
 const DEFAULT_LISTEN: &str = "0.0.0.0:8080";
-const DEFAULT_DB_PATH: &str = "/opt/pi-glass/pi-glass.db";
 const DEFAULT_POLL_INTERVAL_SECS: u64 = 30;
 const DEFAULT_PING_TIMEOUT_SECS: u64 = 2;
 const DEFAULT_RETENTION_DAYS: i64 = 7;
-const CONFIG_PATH: &str = "/opt/pi-glass/config.toml";
+
+fn data_dir() -> String {
+    #[cfg(target_os = "windows")]
+    {
+        std::env::var("LOCALAPPDATA")
+            .map(|p| format!("{p}\\pi-glass"))
+            .unwrap_or_else(|_| ".\\pi-glass".to_string())
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        "/opt/pi-glass".to_string()
+    }
+}
+
+/// On Windows: if config.toml sits beside the .exe and no config exists in data_dir yet,
+/// validate and copy it into place so the user can bootstrap by dropping a file next to the exe.
+#[cfg(target_os = "windows")]
+fn bootstrap_config_from_exe() {
+    let exe_dir = match std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.to_path_buf()))
+    {
+        Some(d) => d,
+        None => return,
+    };
+
+    let src = exe_dir.join("config.toml");
+    if !src.exists() { return; }
+
+    let dest = std::path::Path::new(&data_dir()).join("config.toml");
+    if dest.exists() { return; }
+
+    let contents = match std::fs::read_to_string(&src) {
+        Ok(s) => s,
+        Err(e) => { eprintln!("Warning: could not read {}: {e}", src.display()); return; }
+    };
+    if let Err(e) = toml::from_str::<toml::Value>(&contents) {
+        eprintln!("Warning: config.toml beside exe is not valid TOML, skipping bootstrap: {e}");
+        return;
+    }
+
+    if let Some(parent) = dest.parent() {
+        if let Err(e) = std::fs::create_dir_all(parent) {
+            eprintln!("Warning: could not create {}: {e}", parent.display());
+            return;
+        }
+    }
+
+    match std::fs::copy(&src, &dest) {
+        Ok(_) => {
+            eprintln!("Bootstrapped config: {} -> {}", src.display(), dest.display());
+            use std::io::Write;
+            let note = format!("\n# see {}\n", dest.display());
+            let _ = std::fs::OpenOptions::new()
+                .append(true)
+                .open(&src)
+                .and_then(|mut f| f.write_all(note.as_bytes()));
+        }
+        Err(e) => eprintln!("Warning: could not bootstrap config: {e}"),
+    }
+}
 
 const TOKENS_CSS: &str = include_str!("../web/dist/tokens.css");
 
@@ -110,7 +169,7 @@ struct Config {
 
 fn default_name() -> String { "pi-glass".to_string() }
 fn default_listen() -> String { DEFAULT_LISTEN.to_string() }
-fn default_db_path() -> String { DEFAULT_DB_PATH.to_string() }
+fn default_db_path() -> String { format!("{}/pi-glass.db", data_dir()) }
 fn default_poll_interval() -> u64 { DEFAULT_POLL_INTERVAL_SECS }
 fn default_ping_timeout() -> u64 { DEFAULT_PING_TIMEOUT_SECS }
 fn default_retention_days() -> i64 { DEFAULT_RETENTION_DAYS }
@@ -142,7 +201,7 @@ fn load_config() -> Config {
         .nth(1)
         .filter(|a| a == "--config")
         .and_then(|_| std::env::args().nth(2))
-        .unwrap_or_else(|| CONFIG_PATH.to_string());
+        .unwrap_or_else(|| format!("{}/config.toml", data_dir()));
 
     match std::fs::read_to_string(&path) {
         Ok(contents) => match toml::from_str(&contents) {
@@ -169,7 +228,15 @@ struct AppState {
 
 #[tokio::main]
 async fn main() {
+    #[cfg(target_os = "windows")]
+    bootstrap_config_from_exe();
+
     let config = load_config();
+
+    if let Some(parent) = std::path::Path::new(&config.db_path).parent() {
+        std::fs::create_dir_all(parent)
+            .unwrap_or_else(|e| panic!("Failed to create data directory {}: {e}", parent.display()));
+    }
 
     let conn = Connection::open(&config.db_path)
         .unwrap_or_else(|e| panic!("Failed to open database at {}: {e}", config.db_path));
