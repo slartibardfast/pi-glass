@@ -595,6 +595,22 @@ fn fmt_ms(v: Option<f64>) -> String {
     v.map_or("--".into(), |v| format!("{v:.1}"))
 }
 
+fn fmt_latency(v: Option<f64>) -> String {
+    v.map_or("--".into(), |v| format!("{v:.0}ms"))
+}
+
+fn status_class(s: &str) -> &'static str {
+    if s == "UP" { "status-up" } else { "status-down" }
+}
+
+fn fmt_avg_stddev(avg: Option<f64>, stddev: Option<f64>) -> String {
+    match (avg, stddev) {
+        (Some(a), Some(sd)) => format!(r#"<span class="svc-avg-latency">[{a:.0}ms ±{sd:.0}]</span>"#),
+        (Some(a), None)     => format!(r#"<span class="svc-avg-latency">[{a:.0}ms]</span>"#),
+        _                   => String::new(),
+    }
+}
+
 fn tier_class(uptime_pct: Option<f64>) -> &'static str {
     match uptime_pct {
         Some(p) if p >= 100.0 => "tier-perfect",
@@ -602,6 +618,14 @@ fn tier_class(uptime_pct: Option<f64>) -> &'static str {
         Some(p) if p >= 95.0  => "tier-degraded",
         Some(p) if p > 0.0    => "tier-critical",
         _                     => "tier-down",
+    }
+}
+
+fn state_tier(status: &str) -> &'static str {
+    match status {
+        "UP"   => "tier-good",
+        "DOWN" => "tier-down",
+        _      => "tier-neutral",
     }
 }
 
@@ -709,21 +733,15 @@ fn render_host(db: &Connection, host: &Host, user_open: Option<bool>) -> String 
     let w1h  = query_window_stats(db, &host.addr, 60);
     let w24h = query_window_stats(db, &host.addr, 1440);
     let w7d  = query_window_stats(db, &host.addr, 10080);
-    let tier = tier_class(w1h.uptime_pct);
-    let (cur_status, _) = query_latest_status(db, &host.addr);
+    let (cur_status, latency) = query_latest_status(db, &host.addr);
+    let tier = state_tier(&cur_status);
+    let latency_str = latency.map_or_else(String::new, |ms| format!("{ms:.0}ms"));
     let (h_avg_ms, h_stddev_ms) = query_avg_stddev(db, &host.addr, 60);
-    let latency_summary = match (h_avg_ms, h_stddev_ms) {
-        (Some(avg), Some(sd)) => format!(r#"<span class="host-avg-latency">{avg:.0}ms ±{sd:.0}</span>"#),
-        (Some(avg), None)     => format!(r#"<span class="host-avg-latency">{avg:.0}ms</span>"#),
-        _                     => String::new(),
-    };
-    let streak_display = match w1h.uptime_pct {
-        Some(_) => format!(
-            r#"<span class="host-badge-group"><span class="streak {tier}">{cur_status} {}</span>{latency_summary}</span>"#,
-            fmt_pct(w1h.uptime_pct)
-        ),
-        None => r#"<span class="streak tier-down">--</span>"#.to_string(),
-    };
+    let avg_stddev_str = fmt_avg_stddev(h_avg_ms, h_stddev_ms);
+    let streak_display = format!(
+        r#"<span class="host-badge-group"><span class="svc-latency">{latency_str}{avg_stddev_str}</span><span class="streak {tier}">{}</span></span>"#,
+        fmt_pct(w1h.uptime_pct)
+    );
 
     let all_up_1h = w1h.uptime_pct.map_or(true, |p| p >= 100.0);
     let open_attr = match user_open {
@@ -735,8 +753,8 @@ fn render_host(db: &Connection, host: &Host, user_open: Option<bool>) -> String 
     let rows = query_recent_checks(db, &host.addr, 20);
     let mut detail_rows = String::new();
     for (ts, status, latency) in &rows {
-        let latency_str = latency.map_or("--".to_string(), |v| format!("{v:.1}"));
-        let class = if status == "UP" { "status-up" } else { "status-down" };
+        let latency_str = fmt_ms(*latency);
+        let class = status_class(status);
         detail_rows.push_str(&format!(
             r#"<tr><td>{ts}</td><td></td><td></td><td class="{class}">{status}</td><td>{latency_str}</td></tr>"#
         ));
@@ -766,32 +784,23 @@ fn render_service_item(db: &Connection, svc: &Service, id: &str, user_open: Opti
     } else {
         get_icon_svg(&svc.icon).to_string()
     };
-    let latency_str = latency.map_or("--".to_string(), |ms| format!("{ms:.0}ms"));
+    let latency_str = fmt_latency(latency);
 
     let (avg_ms, stddev_ms) = query_avg_stddev(db, &key, 60);
-    let avg_stddev_str = match (avg_ms, stddev_ms) {
-        (Some(avg), Some(sd)) => format!(
-            r#"<span class="svc-avg-latency">[{avg:.0}ms ±{sd:.0}]</span>"#
-        ),
-        (Some(avg), None) => format!(
-            r#"<span class="svc-avg-latency">[{avg:.0}ms]</span>"#
-        ),
-        _ => String::new(),
-    };
-
+    let avg_stddev_str = fmt_avg_stddev(avg_ms, stddev_ms);
     let w5m  = query_window_stats(db, &key, 5);
     let w1h  = query_window_stats(db, &key, 60);
     let w24h = query_window_stats(db, &key, 1440);
     let w7d  = query_window_stats(db, &key, 10080);
-    let tier = tier_class(w1h.uptime_pct);
+    let tier = state_tier(&cur_status);
     let uptime_badge = fmt_pct(w1h.uptime_pct);
     let open_attr = if user_open.unwrap_or(false) { " open" } else { "" };
 
     let recent = query_recent_checks(db, &key, 10);
     let mut detail_rows = String::new();
     for (ts, s, lat) in &recent {
-        let cls = if s == "UP" { "status-up" } else { "status-down" };
-        let lat_str = lat.map_or("--".to_string(), |v| format!("{v:.1}"));
+        let cls = status_class(s);
+        let lat_str = fmt_ms(*lat);
         let time = if ts.len() > 11 { &ts[11..19] } else { ts };
         detail_rows.push_str(&format!(
             r#"<tr><td>{time}</td><td></td><td></td><td class="{cls}">{s}</td><td>{lat_str}</td></tr>"#

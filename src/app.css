@@ -37,7 +37,6 @@ h1 {
 }
 .host-header::-webkit-details-marker { display: none; }
 .host-name {
-    flex: 1;
     font-size: var(--fontSizeBase500);
     font-weight: var(--fontWeightSemibold);
 }
@@ -53,10 +52,6 @@ h1 {
     flex-direction: row;
     align-items: center;
     gap: var(--spacingHorizontalS);
-}
-.host-avg-latency {
-    font-size: var(--fontSizeBase100);
-    color: var(--colorNeutralForeground3);
 }
 .streak {
     font-size: var(--fontSizeBase200);
@@ -79,6 +74,7 @@ span.tier-perfect, span.tier-good, span.tier-degraded, span.tier-critical, span.
 .streak.tier-degraded, span.tier-degraded { background: var(--colorStatusWarningBackground1); color: var(--colorStatusWarningForeground1); } /* 4.85:1 */
 .streak.tier-critical, span.tier-critical { background: var(--colorStatusDangerBackground1);  color: var(--colorStatusDangerForeground1);  } /* 6.55:1 */
 .streak.tier-down,     span.tier-down     { background: var(--colorStatusDangerBackground2);  color: var(--colorStatusDangerForeground2);  } /* 6.55:1 */
+.streak.tier-neutral,  span.tier-neutral  { background: var(--colorNeutralBackground4);        color: var(--colorNeutralForeground2);        }
 .svc-avg-latency {
     font-size: var(--fontSizeBase100);
     color: var(--colorNeutralForeground3);
@@ -103,12 +99,12 @@ th {
     font-size: var(--fontSizeBase200);
     color: var(--colorNeutralForeground2);
 }
-/* Label column — left-aligned, bold, fixed 28% width */
+/* Label column — left-aligned, bold, fixed 40% width; data cols auto-distribute as 15% each */
 .stats-section th:first-child,
 .stats-section td:first-child,
 .pings-table th:first-child,
 .pings-table td:first-child {
-    width: 28%;
+    width: 40%;
     text-align: left;
     font-weight: var(--fontWeightSemibold);
 }
