@@ -4,16 +4,5 @@
   <span class="ip">{addr}</span>
   {streak_display}
 </summary>
-<div class="stats-section">
-<table>
-<tr><th></th><th>1 hour</th><th>24 hours</th><th>7 days</th></tr>
-<tr><td>Uptime</td><td>{uptime_1h}</td><td>{uptime_24h}</td><td>{uptime_7d}</td></tr>
-<tr><td>Avg ms</td><td>{avg_1h}</td><td>{avg_24h}</td><td>{avg_7d}</td></tr>
-<tr><td>Min ms</td><td>{min_1h}</td><td>{min_24h}</td><td>{min_7d}</td></tr>
-<tr><td>Max ms</td><td>{max_1h}</td><td>{max_24h}</td><td>{max_7d}</td></tr>
-<tr><td>Loss</td><td>{loss_1h}</td><td>{loss_24h}</td><td>{loss_7d}</td></tr>
-</table>
-</div>
-<div class="pings-header">Last 20 pings</div>
-<table>
-<tr><th>Timestamp</th><th>Status</th><th>Latency (ms)</th></tr>
+{stats_section}
+</details>

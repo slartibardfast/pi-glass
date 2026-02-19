@@ -13,6 +13,7 @@ use surge_ping::{Client, Config as PingConfig, PingIdentifier, PingSequence};
 struct UiCookie {
     open_hosts: Option<HashSet<String>>,
     open_svc_cards: Option<HashSet<String>>,
+    open_svc_items: Option<HashSet<String>>,
 }
 
 fn parse_ui_cookie(headers: &axum::http::HeaderMap) -> UiCookie {
@@ -27,21 +28,24 @@ fn parse_ui_cookie(headers: &axum::http::HeaderMap) -> UiCookie {
         .unwrap_or("");
 
     if pg.is_empty() {
-        return UiCookie { open_hosts: None, open_svc_cards: None };
+        return UiCookie { open_hosts: None, open_svc_cards: None, open_svc_items: None };
     }
 
     let mut open_hosts = None;
     let mut open_svc_cards = None;
+    let mut open_svc_items = None;
 
     for field in pg.split('&') {
         if let Some(v) = field.strip_prefix("ho=") {
             open_hosts = Some(v.split('|').filter(|s| !s.is_empty()).map(String::from).collect());
         } else if let Some(v) = field.strip_prefix("sc=") {
             open_svc_cards = Some(v.split('|').filter(|s| !s.is_empty()).map(String::from).collect());
+        } else if let Some(v) = field.strip_prefix("si=") {
+            open_svc_items = Some(v.split('|').filter(|s| !s.is_empty()).map(String::from).collect());
         }
     }
 
-    UiCookie { open_hosts, open_svc_cards }
+    UiCookie { open_hosts, open_svc_cards, open_svc_items }
 }
 
 const DEFAULT_LISTEN: &str = "0.0.0.0:8080";
@@ -660,6 +664,36 @@ fn get_icon_svg(key: &str) -> &'static str {
     }
 }
 
+fn render_stats_section(
+    w1h: &WindowStats, w24h: &WindowStats, w7d: &WindowStats,
+    pings_label: &str, time_col_label: &str, detail_rows: &str,
+) -> String {
+    let loss_1h  = w1h.uptime_pct.map(|u| 100.0 - u);
+    let loss_24h = w24h.uptime_pct.map(|u| 100.0 - u);
+    let loss_7d  = w7d.uptime_pct.map(|u| 100.0 - u);
+    format!(
+        include_str!("templates/stats_section.html"),
+        uptime_1h  = fmt_pct(w1h.uptime_pct),
+        uptime_24h = fmt_pct(w24h.uptime_pct),
+        uptime_7d  = fmt_pct(w7d.uptime_pct),
+        avg_1h  = fmt_ms(w1h.avg_ms),
+        avg_24h = fmt_ms(w24h.avg_ms),
+        avg_7d  = fmt_ms(w7d.avg_ms),
+        min_1h  = fmt_ms(w1h.min_ms),
+        min_24h = fmt_ms(w24h.min_ms),
+        min_7d  = fmt_ms(w7d.min_ms),
+        max_1h  = fmt_ms(w1h.max_ms),
+        max_24h = fmt_ms(w24h.max_ms),
+        max_7d  = fmt_ms(w7d.max_ms),
+        loss_1h  = fmt_pct(loss_1h),
+        loss_24h = fmt_pct(loss_24h),
+        loss_7d  = fmt_pct(loss_7d),
+        pings_label = pings_label,
+        time_col_label = time_col_label,
+        detail_rows = detail_rows,
+    )
+}
+
 // --- HTML rendering ---
 
 fn render_host(db: &Connection, host: &Host, user_open: Option<bool>) -> String {
@@ -668,16 +702,18 @@ fn render_host(db: &Connection, host: &Host, user_open: Option<bool>) -> String 
     let w7d = query_window_stats(db, &host.addr, 10080);
     let tier = tier_class(w1h.uptime_pct);
     let (cur_status, _) = query_latest_status(db, &host.addr);
+    let (h_avg_ms, h_stddev_ms) = query_avg_stddev(db, &host.addr, 60);
+    let latency_summary = match (h_avg_ms, h_stddev_ms) {
+        (Some(avg), Some(sd)) => format!(r#"<span class="host-avg-latency">{avg:.0}ms ±{sd:.0}</span>"#),
+        (Some(avg), None)     => format!(r#"<span class="host-avg-latency">{avg:.0}ms</span>"#),
+        _                     => String::new(),
+    };
     let streak_display = match w1h.uptime_pct {
         Some(p) => format!(
-            r#"<span class="streak {tier}" title="1h uptime">{cur_status} {p:.1}%</span>"#
+            r#"<span class="host-badge-group"><span class="streak {tier}">{cur_status} {p:.1}%</span>{latency_summary}</span>"#
         ),
-        None => r#"<span class="streak tier-down" title="No data yet">--</span>"#.to_string(),
+        None => r#"<span class="streak tier-down">--</span>"#.to_string(),
     };
-
-    let loss_1h = w1h.uptime_pct.map(|u| 100.0 - u);
-    let loss_24h = w24h.uptime_pct.map(|u| 100.0 - u);
-    let loss_7d = w7d.uptime_pct.map(|u| 100.0 - u);
 
     let all_up_1h = w1h.uptime_pct.map_or(true, |p| p >= 100.0);
     let open_attr = match user_open {
@@ -686,46 +722,31 @@ fn render_host(db: &Connection, host: &Host, user_open: Option<bool>) -> String 
         None        => if all_up_1h { "" } else { " open" },
     };
 
-    let mut html = format!(
+    let rows = query_recent_checks(db, &host.addr, 20);
+    let mut detail_rows = String::new();
+    for (ts, status, latency) in &rows {
+        let latency_str = latency.map_or("--".to_string(), |v| format!("{v:.1}"));
+        let class = if status == "UP" { "status-up" } else { "status-down" };
+        detail_rows.push_str(&format!(
+            r#"<tr><td>{ts}</td><td class="{class}">{status}</td><td>{latency_str}</td></tr>"#
+        ));
+    }
+    let stats_section = render_stats_section(&w1h, &w24h, &w7d, "Last 20 pings", "Timestamp", &detail_rows);
+
+    format!(
         include_str!("templates/host.html"),
         open_attr = open_attr,
         label = host.label,
         addr = host.addr,
         streak_display = streak_display,
-        uptime_1h = fmt_pct(w1h.uptime_pct),
-        uptime_24h = fmt_pct(w24h.uptime_pct),
-        uptime_7d = fmt_pct(w7d.uptime_pct),
-        avg_1h = fmt_ms(w1h.avg_ms),
-        avg_24h = fmt_ms(w24h.avg_ms),
-        avg_7d = fmt_ms(w7d.avg_ms),
-        min_1h = fmt_ms(w1h.min_ms),
-        min_24h = fmt_ms(w24h.min_ms),
-        min_7d = fmt_ms(w7d.min_ms),
-        max_1h = fmt_ms(w1h.max_ms),
-        max_24h = fmt_ms(w24h.max_ms),
-        max_7d = fmt_ms(w7d.max_ms),
-        loss_1h = fmt_pct(loss_1h),
-        loss_24h = fmt_pct(loss_24h),
-        loss_7d = fmt_pct(loss_7d),
-    );
-
-    let rows = query_recent_checks(db, &host.addr, 20);
-    for (ts, status, latency) in rows {
-        let latency_str = latency.map_or("--".to_string(), |v| format!("{v:.1}"));
-        let class = if status == "UP" { "status-up" } else { "status-down" };
-        html.push_str(&format!(
-            r#"<tr><td>{ts}</td><td class="{class}">{status}</td><td>{latency_str}</td></tr>"#
-        ));
-    }
-
-    html.push_str("</table></details>");
-    html
+        stats_section = stats_section,
+    )
 }
 
-fn render_service_item(db: &Connection, svc: &Service, id: &str) -> String {
+fn render_service_item(db: &Connection, svc: &Service, id: &str, user_open: Option<bool>) -> String {
     let key = format!("svc:{}", svc.label);
-    let (status, latency) = query_latest_status(db, &key);
-    let dot_class = match status.as_str() {
+    let (cur_status, latency) = query_latest_status(db, &key);
+    let dot_class = match cur_status.as_str() {
         "UP" => "up",
         "DOWN" => "down",
         _ => "unknown",
@@ -740,18 +761,25 @@ fn render_service_item(db: &Connection, svc: &Service, id: &str) -> String {
     let (avg_ms, stddev_ms) = query_avg_stddev(db, &key, 60);
     let avg_stddev_str = match (avg_ms, stddev_ms) {
         (Some(avg), Some(sd)) => format!(
-            r#"<span class="svc-avg-latency" title="1h average latency ± standard deviation">[{avg:.0}ms ±{sd:.0}]</span>"#
+            r#"<span class="svc-avg-latency">[{avg:.0}ms ±{sd:.0}]</span>"#
         ),
         (Some(avg), None) => format!(
-            r#"<span class="svc-avg-latency" title="1h average latency">[{avg:.0}ms]</span>"#
+            r#"<span class="svc-avg-latency">[{avg:.0}ms]</span>"#
         ),
         _ => String::new(),
     };
 
-    // Query detail data
-    let w1h = query_window_stats(db, &key, 60);
-    let recent = query_recent_checks(db, &key, 10);
+    let w1h  = query_window_stats(db, &key, 60);
+    let w24h = query_window_stats(db, &key, 1440);
+    let w7d  = query_window_stats(db, &key, 10080);
+    let tier = tier_class(w1h.uptime_pct);
+    let uptime_badge = match w1h.uptime_pct {
+        Some(p) => format!("{cur_status} {p:.1}%"),
+        None => "--".to_string(),
+    };
+    let open_attr = if user_open.unwrap_or(false) { " open" } else { "" };
 
+    let recent = query_recent_checks(db, &key, 10);
     let mut detail_rows = String::new();
     for (ts, s, lat) in &recent {
         let cls = if s == "UP" { "status-up" } else { "status-down" };
@@ -761,24 +789,26 @@ fn render_service_item(db: &Connection, svc: &Service, id: &str) -> String {
             r#"<tr><td>{time}</td><td class="{cls}">{s}</td><td>{lat_str}</td></tr>"#
         ));
     }
+    let stats_section = render_stats_section(&w1h, &w24h, &w7d, "Last 10 checks", "Time", &detail_rows);
 
     format!(
         include_str!("templates/service_item.html"),
         id = id,
+        open_attr = open_attr,
         icon_html = icon_html,
         dot_class = dot_class,
         label = svc.label,
         latency_str = latency_str,
         avg_stddev_str = avg_stddev_str,
+        tier = tier,
+        uptime_badge = uptime_badge,
         check = svc.check,
         target = svc.target,
-        uptime_1h = fmt_pct(w1h.uptime_pct),
-        avg_1h = fmt_ms(w1h.avg_ms),
-        detail_rows = detail_rows,
+        stats_section = stats_section,
     )
 }
 
-fn render_service_card(db: &Connection, title: &str, svcs: &[&Service], start_idx: usize, open: bool) -> String {
+fn render_service_card(db: &Connection, title: &str, svcs: &[&Service], start_idx: usize, open: bool, open_svc_items: Option<&HashSet<String>>) -> String {
     if svcs.is_empty() {
         return String::new();
     }
@@ -807,7 +837,8 @@ fn render_service_card(db: &Connection, title: &str, svcs: &[&Service], start_id
     );
     for (i, svc) in svcs.iter().enumerate() {
         let id = format!("svc-{}", start_idx + i);
-        html.push_str(&render_service_item(db, svc, &id));
+        let item_open = open_svc_items.map(|set| set.contains(&id));
+        html.push_str(&render_service_item(db, svc, &id, item_open));
     }
     html.push_str("</div></details>");
     html
@@ -830,8 +861,9 @@ fn render_services(db: &Connection, services: &[Service], ui: &UiCookie) -> Stri
         }
     };
 
-    let mut html = render_service_card(db, "Web", &non_dns, 0, svc_open("Web"));
-    html.push_str(&render_service_card(db, "DNS", &dns, non_dns.len(), svc_open("DNS")));
+    let open_items = ui.open_svc_items.as_ref();
+    let mut html = render_service_card(db, "Web", &non_dns, 0, svc_open("Web"), open_items);
+    html.push_str(&render_service_card(db, "DNS", &dns, non_dns.len(), svc_open("DNS"), open_items));
     html
 }
 
@@ -866,8 +898,6 @@ async fn handler(State(state): State<Arc<AppState>>, headers: axum::http::Header
     // Footer
     html.push_str(r##"<footer>Made with &#10084;&#65039; by <a href="mailto:david@connol.ly">David Connolly</a> &amp; <a href="https://claude.ai">Claude</a> &middot; <a href="https://github.com/slartibardfast/pi-glass">pi-glass</a></footer>"##);
 
-    // Mobile backdrop + inline JS
-    html.push_str(r#"<div id="svc-backdrop" class="svc-backdrop"></div>"#);
     html.push_str(&format!("<script>{INLINE_JS}</script>"));
     html.push_str("</body></html>");
     Html(html)

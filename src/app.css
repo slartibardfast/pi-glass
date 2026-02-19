@@ -47,8 +47,16 @@ h1 {
     font-weight: var(--fontWeightRegular);
     font-size: var(--fontSizeBase500);
 }
-.host-header .streak {
+.host-header .host-badge-group {
     justify-self: end;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 2px;
+}
+.host-avg-latency {
+    font-size: var(--fontSizeBase100);
+    color: var(--colorNeutralForeground3);
 }
 .streak {
     font-size: var(--fontSizeBase200);
@@ -63,11 +71,12 @@ span.tier-perfect, span.tier-good, span.tier-degraded, span.tier-critical, span.
     padding: var(--spacingVerticalXS) var(--spacingHorizontalM);
     border-radius: var(--borderRadiusMedium);
 }
-.streak.tier-perfect,  span.tier-perfect  { background: var(--colorStatusSuccessBackground1); color: var(--colorStatusSuccessForeground1); }
-.streak.tier-good,     span.tier-good     { background: var(--colorStatusSuccessBackground3); color: var(--colorStatusSuccessForeground1); }
-.streak.tier-degraded, span.tier-degraded { background: var(--colorStatusWarningBackground1); color: var(--colorStatusWarningForeground1); }
-.streak.tier-critical, span.tier-critical { background: var(--colorStatusDangerBackground3);  color: var(--colorStatusDangerForeground1); }
-.streak.tier-down,     span.tier-down     { background: var(--colorStatusDangerBackground1);  color: var(--colorStatusDangerForeground1); }
+/* Tier badges — all pairs verified WCAG AA (≥4.5:1) with lighter backgrounds for dark-mode readiness */
+.streak.tier-perfect,  span.tier-perfect  { background: var(--colorStatusSuccessBackground2); color: var(--colorStatusSuccessForeground2); } /* 6.86:1 */
+.streak.tier-good,     span.tier-good     { background: var(--colorStatusSuccessBackground1); color: var(--colorStatusSuccessForeground1); } /* 5.89:1 */
+.streak.tier-degraded, span.tier-degraded { background: var(--colorStatusWarningBackground1); color: var(--colorStatusWarningForeground1); } /* 4.85:1 */
+.streak.tier-critical, span.tier-critical { background: var(--colorStatusDangerBackground1);  color: var(--colorStatusDangerForeground1);  } /* 6.55:1 */
+.streak.tier-down,     span.tier-down     { background: var(--colorStatusDangerBackground2);  color: var(--colorStatusDangerForeground2);  } /* 6.55:1 */
 .svc-avg-latency {
     font-size: var(--fontSizeBase100);
     color: var(--colorNeutralForeground3);
@@ -109,7 +118,7 @@ tr:last-child td { border-bottom: none; }
 /* Services bar */
 .services-grid {
     display: grid;
-    grid-template-columns: 20px 12px 1fr auto;
+    grid-template-columns: 20px 12px 1fr auto auto;
     gap: var(--spacingVerticalXS) var(--spacingHorizontalXS);
     align-items: center;
 }
@@ -117,9 +126,28 @@ tr:last-child td { border-bottom: none; }
     display: grid;
     grid-template-columns: subgrid;
     grid-column: 1 / -1;
-    position: relative;
-    cursor: pointer;
+}
+.svc-item > summary {
+    display: grid;
+    grid-template-columns: subgrid;
+    grid-column: 1 / -1;
     align-items: center;
+    list-style: none;
+    cursor: pointer;
+    padding: var(--spacingVerticalXS) 0;
+}
+.svc-item > summary::-webkit-details-marker { display: none; }
+.svc-expand {
+    grid-column: 1 / -1;
+    margin: 0 calc(-1 * var(--spacingHorizontalL));
+    border-top: 1px solid var(--colorNeutralStroke2);
+}
+.svc-expand-target {
+    padding: var(--spacingVerticalXS) var(--spacingHorizontalL);
+    font-size: var(--fontSizeBase200);
+    color: var(--colorNeutralForeground2);
+    background: var(--colorNeutralBackground3);
+    border-bottom: 1px solid var(--colorNeutralStroke2);
 }
 .svc-icon svg, .svc-icon img { width: 20px; height: 20px; display: block; }
 .svc-dot {
@@ -147,6 +175,7 @@ tr:last-child td { border-bottom: none; }
     border-radius: var(--borderRadiusLarge);
     box-shadow: var(--shadow4);
     margin-bottom: var(--spacingVerticalL);
+    overflow: hidden;
 }
 .svc-card > summary {
     display: flex;
@@ -165,64 +194,11 @@ tr:last-child td { border-bottom: none; }
     padding: var(--spacingVerticalS) var(--spacingHorizontalL);
 }
 
-/* Service detail tooltip */
-.svc-detail {
-    display: none;
-    position: fixed;
-    z-index: 10;
-    background: var(--colorNeutralCardBackground);
-    border: 1px solid var(--colorNeutralStroke2);
-    border-radius: var(--borderRadiusMedium);
-    box-shadow: var(--shadow16);
-    padding: var(--spacingVerticalM) var(--spacingHorizontalM);
-    min-width: 300px;
-    max-width: 400px;
+.svc-expand .stats-section { padding: 0; }
+.svc-expand table { font-size: var(--fontSizeBase200); }
+.svc-expand th, .svc-expand td {
+    padding: var(--spacingVerticalXS) var(--spacingHorizontalM);
 }
-.svc-detail.open { display: block; }
-.svc-detail-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: var(--spacingVerticalS);
-    font-size: var(--fontSizeBase200);
-}
-.svc-detail-header strong { font-size: var(--fontSizeBase300); }
-.svc-detail-header .svc-target { color: var(--colorNeutralForeground2); }
-.svc-close { background: none; border: none; font-size: 20px; cursor: pointer; color: var(--colorNeutralForeground2); }
-.svc-detail-stats {
-    display: flex;
-    gap: var(--spacingHorizontalL);
-    margin-bottom: var(--spacingVerticalS);
-    font-size: var(--fontSizeBase200);
-    color: var(--colorNeutralForeground2);
-}
-.svc-detail table { font-size: var(--fontSizeBase200); }
-.svc-detail th, .svc-detail td {
-    padding: var(--spacingVerticalXS) var(--spacingHorizontalS);
-}
-
-/* Mobile overlay */
-@media (max-width: 768px) {
-    .svc-detail.open {
-        bottom: 0; left: 0; right: 0;
-        top: auto;
-        border-radius: var(--borderRadiusLarge) var(--borderRadiusLarge) 0 0;
-        box-shadow: var(--shadow28);
-        max-height: 60vh;
-        max-width: none;
-        overflow-y: auto;
-        padding: var(--spacingVerticalL);
-        z-index: 11;
-    }
-}
-.svc-backdrop {
-    display: none;
-    position: fixed;
-    inset: 0;
-    background: rgba(0,0,0,0.3);
-    z-index: 9;
-}
-.svc-backdrop.open { display: block; }
 .config-card {
     background: var(--colorNeutralCardBackground);
     border: 1px solid var(--colorNeutralStroke2);
