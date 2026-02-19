@@ -1,0 +1,20 @@
+<div class="svc-item" data-svc="{id}">
+<span class="svc-icon">{icon_html}</span>
+<span class="svc-dot {dot_class}"></span>
+<span class="svc-label">{label}</span>
+<span class="svc-latency">{latency_str}</span>
+<div class="svc-detail" id="{id}">
+<div class="svc-detail-header">
+<div><strong>{label}</strong> <span class="svc-target">{check} &rarr; {target}</span></div>
+<button class="svc-close" >&times;</button>
+</div>
+<div class="svc-detail-stats">
+<span>Uptime 1h: {uptime_1h}</span>
+<span>Avg: {avg_1h}</span>
+</div>
+<table>
+<tr><th>Time</th><th>Status</th><th>ms</th></tr>
+{detail_rows}
+</table>
+</div>
+</div>

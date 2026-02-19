@@ -18,263 +18,9 @@ const CONFIG_PATH: &str = "/opt/pi-glass/config.toml";
 
 const TOKENS_CSS: &str = include_str!("../web/dist/tokens.css");
 
-const APP_CSS: &str = r#"
-* { margin: 0; padding: 0; box-sizing: border-box; }
-body {
-    background: var(--colorNeutralBackground1);
-    color: var(--colorNeutralForeground1);
-    font-family: var(--fontFamilyBase);
-    font-size: var(--fontSizeBase300);
-    line-height: var(--lineHeightBase300);
-    padding: var(--spacingVerticalXXL) var(--spacingHorizontalXXL);
-    max-width: 960px;
-    margin: 0 auto;
-}
-.title-bar {
-    margin-bottom: var(--spacingVerticalXXL);
-}
-h1 {
-    font-size: var(--fontSizeHero700);
-    margin-bottom: var(--spacingVerticalM);
-    font-weight: var(--fontWeightSemibold);
-}
-.host-card {
-    background: var(--colorNeutralCardBackground);
-    border: 1px solid var(--colorNeutralStroke2);
-    border-radius: var(--borderRadiusLarge);
-    box-shadow: var(--shadow4);
-    margin-bottom: var(--spacingVerticalXXL);
-    overflow: hidden;
-}
-.host-header {
-    display: flex;
-    align-items: center;
-    padding: var(--spacingVerticalM) var(--spacingHorizontalL);
-    border-bottom: 1px solid var(--colorNeutralStroke2);
-    background: var(--colorNeutralBackground3);
-    cursor: pointer;
-    list-style: none;
-}
-.host-header::-webkit-details-marker { display: none; }
-.host-name {
-    flex: 1;
-    font-size: var(--fontSizeBase500);
-    font-weight: var(--fontWeightSemibold);
-}
-.host-header .ip {
-    flex: 1;
-    text-align: center;
-    color: var(--colorNeutralForeground2);
-    font-weight: var(--fontWeightRegular);
-    font-size: var(--fontSizeBase500);
-}
-.host-header .streak {
-    flex: 1;
-    text-align: right;
-}
-.streak {
-    font-size: var(--fontSizeBase200);
-    font-weight: var(--fontWeightSemibold);
-    padding: var(--spacingVerticalXS) var(--spacingHorizontalM);
-    border-radius: var(--borderRadiusMedium);
-}
-.streak.up {
-    background: var(--colorStatusSuccessBackground1);
-    color: var(--colorStatusSuccessForeground1);
-}
-.streak.down {
-    background: var(--colorStatusDangerBackground1);
-    color: var(--colorStatusDangerForeground1);
-}
-table {
-    width: 100%;
-    border-collapse: collapse;
-}
-th, td {
-    padding: var(--spacingVerticalS) var(--spacingHorizontalM);
-    text-align: left;
-    border-bottom: 1px solid var(--colorNeutralStroke2);
-}
-th {
-    background: var(--colorNeutralBackground3);
-    font-weight: var(--fontWeightSemibold);
-    font-size: var(--fontSizeBase200);
-    color: var(--colorNeutralForeground2);
-}
-.stats-section { padding: 0; }
-.stats-section th:first-child,
-.stats-section td:first-child {
-    font-weight: var(--fontWeightSemibold);
-}
-.pings-header {
-    padding: var(--spacingVerticalS) var(--spacingHorizontalL);
-    border-bottom: 1px solid var(--colorNeutralStroke2);
-    border-top: 1px solid var(--colorNeutralStroke2);
-    font-size: var(--fontSizeBase200);
-    font-weight: var(--fontWeightSemibold);
-    color: var(--colorNeutralForeground2);
-    background: var(--colorNeutralBackground3);
-}
-.status-up { color: var(--colorStatusSuccessForeground1); font-weight: var(--fontWeightSemibold); }
-.status-down { color: var(--colorStatusDangerForeground1); font-weight: var(--fontWeightSemibold); }
-tr:last-child td { border-bottom: none; }
+const APP_CSS: &str = include_str!("app.css");
 
-/* Services bar */
-.services-grid {
-    display: grid;
-    grid-template-columns: 20px 12px 1fr auto;
-    gap: var(--spacingVerticalXS) var(--spacingHorizontalXS);
-    align-items: center;
-}
-.svc-item {
-    display: grid;
-    grid-template-columns: subgrid;
-    grid-column: 1 / -1;
-    position: relative;
-    cursor: pointer;
-    align-items: center;
-}
-.svc-icon svg, .svc-icon img { width: 20px; height: 20px; display: block; }
-.svc-dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    justify-self: center;
-}
-.svc-dot.up { background: var(--colorStatusSuccessForeground1); }
-.svc-dot.down { background: var(--colorStatusDangerForeground1); }
-.svc-dot.unknown { background: var(--colorNeutralForeground3); }
-.svc-label {
-    font-size: var(--fontSizeBase200);
-    font-weight: var(--fontWeightSemibold);
-    white-space: nowrap;
-}
-.svc-latency {
-    font-size: var(--fontSizeBase100);
-    color: var(--colorNeutralForeground2);
-    text-align: right;
-}
-.svc-card {
-    background: var(--colorNeutralCardBackground);
-    border: 1px solid var(--colorNeutralStroke2);
-    border-radius: var(--borderRadiusLarge);
-    box-shadow: var(--shadow4);
-    margin-bottom: var(--spacingVerticalL);
-}
-.svc-card > summary {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: var(--spacingVerticalS) var(--spacingHorizontalL);
-    background: var(--colorNeutralBackground3);
-    border-bottom: 1px solid var(--colorNeutralStroke2);
-    cursor: pointer;
-    list-style: none;
-    font-size: var(--fontSizeBase400);
-    font-weight: var(--fontWeightSemibold);
-}
-.svc-card > summary::-webkit-details-marker { display: none; }
-.svc-card .services-grid {
-    padding: var(--spacingVerticalS) var(--spacingHorizontalL);
-}
-
-/* Service detail tooltip */
-.svc-detail {
-    display: none;
-    position: fixed;
-    z-index: 10;
-    background: var(--colorNeutralCardBackground);
-    border: 1px solid var(--colorNeutralStroke2);
-    border-radius: var(--borderRadiusMedium);
-    box-shadow: var(--shadow16);
-    padding: var(--spacingVerticalM) var(--spacingHorizontalM);
-    min-width: 300px;
-    max-width: 400px;
-}
-.svc-detail.open { display: block; }
-.svc-detail-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: var(--spacingVerticalS);
-    font-size: var(--fontSizeBase200);
-}
-.svc-detail-header strong { font-size: var(--fontSizeBase300); }
-.svc-detail-header .svc-target { color: var(--colorNeutralForeground2); }
-.svc-close { background: none; border: none; font-size: 20px; cursor: pointer; color: var(--colorNeutralForeground2); }
-.svc-detail-stats {
-    display: flex;
-    gap: var(--spacingHorizontalL);
-    margin-bottom: var(--spacingVerticalS);
-    font-size: var(--fontSizeBase200);
-    color: var(--colorNeutralForeground2);
-}
-.svc-detail table { font-size: var(--fontSizeBase200); }
-.svc-detail th, .svc-detail td {
-    padding: var(--spacingVerticalXS) var(--spacingHorizontalS);
-}
-
-/* Mobile overlay */
-@media (max-width: 768px) {
-    .svc-detail.open {
-        bottom: 0; left: 0; right: 0;
-        top: auto;
-        border-radius: var(--borderRadiusLarge) var(--borderRadiusLarge) 0 0;
-        box-shadow: var(--shadow28);
-        max-height: 60vh;
-        max-width: none;
-        overflow-y: auto;
-        padding: var(--spacingVerticalL);
-        z-index: 11;
-    }
-}
-.svc-backdrop {
-    display: none;
-    position: fixed;
-    inset: 0;
-    background: rgba(0,0,0,0.3);
-    z-index: 9;
-}
-.svc-backdrop.open { display: block; }
-footer {
-    text-align: center;
-    padding: var(--spacingVerticalXXL) 0 var(--spacingVerticalM);
-    font-size: var(--fontSizeBase200);
-    color: var(--colorNeutralForeground3);
-}
-footer a { color: var(--colorBrandForeground1); text-decoration: none; }
-footer a:hover { text-decoration: underline; }
-"#;
-
-const INLINE_JS: &str = r#"
-function openDetail(id,anchor){
-    closeDetail();
-    var d=document.getElementById(id);
-    d.classList.add('open');
-    document.getElementById('svc-backdrop').classList.add('open');
-    if(window.innerWidth>768&&anchor){
-        var r=anchor.getBoundingClientRect();
-        var top=r.bottom+4;
-        if(top+300>window.innerHeight){top=r.top-304}
-        d.style.top=top+'px';
-        d.style.left=Math.max(8,Math.min(r.left,window.innerWidth-320))+'px';
-    }
-}
-function closeDetail(){
-    document.querySelectorAll('.svc-detail.open').forEach(function(e){e.classList.remove('open');e.style.top='';e.style.left=''});
-    document.getElementById('svc-backdrop').classList.remove('open');
-}
-document.querySelectorAll('.svc-item').forEach(function(el){
-    el.addEventListener('click',function(){openDetail(el.dataset.svc,el)});
-});
-document.querySelectorAll('.svc-detail').forEach(function(d){
-    d.addEventListener('click',function(e){e.stopPropagation()});
-});
-document.querySelectorAll('.svc-close').forEach(function(b){
-    b.addEventListener('click',function(e){e.stopPropagation();closeDetail()});
-});
-document.getElementById('svc-backdrop').addEventListener('click',closeDetail);
-"#;
+const INLINE_JS: &str = include_str!("app.js");
 
 // Minimal DNS A-query for google.com
 const DNS_QUERY: [u8; 28] = [
@@ -653,18 +399,18 @@ fn fmt_ms(v: Option<f64>) -> String {
 
 fn get_icon_svg(key: &str) -> &'static str {
     match key {
-        "google" => r##"<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>"##,
-        "bing" => r##"<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M5 3v16.5l4.5 2.5 7-4v-4l-5-2.5V3z" fill="#00809D"/><path d="M5 19.5L9.5 22l7-4v-4L9.5 11V3L5 5z" fill="#008373" opacity="0.8"/></svg>"##,
-        "heanet" => r##"<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect width="24" height="24" rx="4" fill="#00594F"/><text x="12" y="16" text-anchor="middle" font-size="11" font-weight="bold" fill="white" font-family="sans-serif">HE</text></svg>"##,
-        "digiweb" => r##"<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect width="24" height="24" rx="4" fill="#E31937"/><text x="12" y="16" text-anchor="middle" font-size="10" font-weight="bold" fill="white" font-family="sans-serif">DW</text></svg>"##,
-        "digiweb-dns" => r##"<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect width="24" height="24" rx="4" fill="#E31937" opacity="0.7"/><text x="12" y="12" text-anchor="middle" font-size="7" font-weight="bold" fill="white" font-family="sans-serif">DW</text><text x="12" y="20" text-anchor="middle" font-size="7" font-weight="bold" fill="white" font-family="sans-serif">NS</text></svg>"##,
-        "dkit" => r##"<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect width="24" height="24" rx="4" fill="#003B5C"/><text x="12" y="10" text-anchor="middle" font-size="6.5" font-weight="bold" fill="white" font-family="sans-serif">DkIT</text><rect x="3" y="13" width="18" height="2" rx="1" fill="#8DC63F"/></svg>"##,
-        "youtube" => r##"<img style="width:20px;height:20px" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAABr0lEQVRYhe3Xv48MYQDG8c87uTjubkmEjd+hkEs0crfRiUahYVfhDxCUCpVoVBKiENGKnEKiccUFEY2C2uxFIuQo/CgUGw171p5iRzEzCiGxs5sdxT3J5H0zmed9vsX7zjwTkiRRpqJS01cB/geAkE8StXEcxSx2o4oKJrNxQ/Z8wPq/rPcVCXrZvI1v2djCezTxMIhXfgEkavuxkAWPQh/QCOIXIVFbhzfYMaLwXB8xHeF4CeGwC/UIB0oIz3Uwwr4SAfZG2N6XpbqR0w2ioZzgrRE29WWZWMutizy/w6HZQQGqEaYKWWemeXqTe1fZs60owFRxgFwnDvN6nitnqUz0664M51U8voYLJ3m7wKl6X/uj9G/B2FBWWfnB9btcnqPd6Rtg2SD7YP4J52/w7lMRd7s4wOIS567xrFkkONfyGD5jyz9bOl3OXOL2A3q9QcKhFRK1xzgy6EoF9SjCq5LC4WWEuESAZl5IlrBzxOFpIQni7zgm7WujDK8Hcff3UtrAjLQbbpaWz8nsyktpJC2pf1JeShN8kR7xTna/Je2Ci7gfxF0Iq79mqwBlA/wEihVj07SFCdQAAAAASUVORK5CYII=">"##,
-        "outlook" => r##"<img style="width:20px;height:20px" src="data:image/png;base64,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">"##,
-        "whatsapp" => r##"<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect width="24" height="24" rx="4" fill="#25D366"/><path d="M17.5 14.4c-.3-.15-1.7-.84-2-.94-.3-.1-.5-.15-.7.15-.2.3-.75.94-.9 1.13-.17.2-.33.22-.63.07-.3-.15-1.25-.46-2.38-1.47-.88-.78-1.47-1.75-1.64-2.05-.17-.3-.02-.46.13-.61.13-.13.3-.34.44-.51.15-.17.2-.3.3-.49.1-.2.05-.37-.03-.52-.07-.15-.68-1.64-.93-2.24-.25-.6-.5-.52-.68-.53h-.58c-.2 0-.52.07-.8.37-.27.3-1.04 1.02-1.04 2.49s1.07 2.89 1.22 3.09c.15.2 2.1 3.2 5.08 4.49.71.31 1.27.49 1.7.63.71.23 1.36.2 1.87.12.57-.09 1.7-.7 1.94-1.37.24-.68.24-1.26.17-1.38-.08-.12-.27-.2-.57-.34z" fill="white"/><path d="M12 2C6.48 2 2 6.48 2 12c0 1.77.47 3.44 1.28 4.88L2 22l5.27-1.38C8.69 21.52 10.3 22 12 22c5.52 0 10-4.48 10-10S17.52 2 12 2zm0 18c-1.5 0-2.94-.4-4.2-1.15l-.3-.18-3.12.82.83-3.04-.2-.31A7.94 7.94 0 014 12c0-4.41 3.59-8 8-8s8 3.59 8 8-3.59 8-8 8z" fill="white" opacity="0.3"/></svg>"##,
-        "cloudflare" => r##"<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect width="24" height="24" rx="4" fill="#F48120"/><text x="12" y="16" text-anchor="middle" font-size="10" font-weight="bold" fill="white" font-family="sans-serif">CF</text></svg>"##,
-        "dns" => r##"<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect width="24" height="24" rx="4" fill="#5B5FC7"/><text x="12" y="16" text-anchor="middle" font-size="10" font-weight="bold" fill="white" font-family="sans-serif">NS</text></svg>"##,
-        _ => r##"<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect width="24" height="24" rx="4" fill="#888"/><text x="12" y="16" text-anchor="middle" font-size="10" font-weight="bold" fill="white" font-family="sans-serif">?</text></svg>"##,
+        "google" => include_str!("icons/google.svg"),
+        "bing" => include_str!("icons/bing.svg"),
+        "heanet" => include_str!("icons/heanet.svg"),
+        "digiweb" => include_str!("icons/digiweb.svg"),
+        "digiweb-dns" => include_str!("icons/digiweb-dns.svg"),
+        "dkit" => include_str!("icons/dkit.svg"),
+        "youtube" => include_str!("icons/youtube.html"),
+        "outlook" => include_str!("icons/outlook.html"),
+        "whatsapp" => include_str!("icons/whatsapp.svg"),
+        "cloudflare" => include_str!("icons/cloudflare.svg"),
+        "dns" => include_str!("icons/dns.svg"),
+        _ => include_str!("icons/fallback.svg"),
     }
 }
 
@@ -693,42 +439,26 @@ fn render_host(db: &Connection, host: &Host) -> String {
     let open_attr = if all_up_1h { "" } else { " open" };
 
     let mut html = format!(
-        r#"<details class="host-card"{open_attr}>
-<summary class="host-header">
-  <span class="host-name">{}</span>
-  <span class="ip">{}</span>
-  {streak_display}
-</summary>
-<div class="stats-section">
-<table>
-<tr><th></th><th>1 hour</th><th>24 hours</th><th>7 days</th></tr>
-<tr><td>Uptime</td><td>{}</td><td>{}</td><td>{}</td></tr>
-<tr><td>Avg ms</td><td>{}</td><td>{}</td><td>{}</td></tr>
-<tr><td>Min ms</td><td>{}</td><td>{}</td><td>{}</td></tr>
-<tr><td>Max ms</td><td>{}</td><td>{}</td><td>{}</td></tr>
-<tr><td>Loss</td><td>{}</td><td>{}</td><td>{}</td></tr>
-</table>
-</div>
-<div class="pings-header">Last 20 pings</div>
-<table>
-<tr><th>Timestamp</th><th>Status</th><th>Latency (ms)</th></tr>"#,
-        host.label,
-        host.addr,
-        fmt_pct(w1h.uptime_pct),
-        fmt_pct(w24h.uptime_pct),
-        fmt_pct(w7d.uptime_pct),
-        fmt_ms(w1h.avg_ms),
-        fmt_ms(w24h.avg_ms),
-        fmt_ms(w7d.avg_ms),
-        fmt_ms(w1h.min_ms),
-        fmt_ms(w24h.min_ms),
-        fmt_ms(w7d.min_ms),
-        fmt_ms(w1h.max_ms),
-        fmt_ms(w24h.max_ms),
-        fmt_ms(w7d.max_ms),
-        fmt_pct(loss_1h),
-        fmt_pct(loss_24h),
-        fmt_pct(loss_7d),
+        include_str!("templates/host.html"),
+        open_attr = open_attr,
+        label = host.label,
+        addr = host.addr,
+        streak_display = streak_display,
+        uptime_1h = fmt_pct(w1h.uptime_pct),
+        uptime_24h = fmt_pct(w24h.uptime_pct),
+        uptime_7d = fmt_pct(w7d.uptime_pct),
+        avg_1h = fmt_ms(w1h.avg_ms),
+        avg_24h = fmt_ms(w24h.avg_ms),
+        avg_7d = fmt_ms(w7d.avg_ms),
+        min_1h = fmt_ms(w1h.min_ms),
+        min_24h = fmt_ms(w24h.min_ms),
+        min_7d = fmt_ms(w7d.min_ms),
+        max_1h = fmt_ms(w1h.max_ms),
+        max_24h = fmt_ms(w24h.max_ms),
+        max_7d = fmt_ms(w7d.max_ms),
+        loss_1h = fmt_pct(loss_1h),
+        loss_24h = fmt_pct(loss_24h),
+        loss_7d = fmt_pct(loss_7d),
     );
 
     let rows = query_recent_checks(db, &host.addr, 20);
@@ -774,32 +504,17 @@ fn render_service_item(db: &Connection, svc: &Service, id: &str) -> String {
     }
 
     format!(
-        r#"<div class="svc-item" data-svc="{id}">
-<span class="svc-icon">{icon_html}</span>
-<span class="svc-dot {dot_class}"></span>
-<span class="svc-label">{}</span>
-<span class="svc-latency">{latency_str}</span>
-<div class="svc-detail" id="{id}">
-<div class="svc-detail-header">
-<div><strong>{}</strong> <span class="svc-target">{} &rarr; {}</span></div>
-<button class="svc-close" >&times;</button>
-</div>
-<div class="svc-detail-stats">
-<span>Uptime 1h: {}</span>
-<span>Avg: {}</span>
-</div>
-<table>
-<tr><th>Time</th><th>Status</th><th>ms</th></tr>
-{detail_rows}
-</table>
-</div>
-</div>"#,
-        svc.label,
-        svc.label,
-        svc.check,
-        svc.target,
-        fmt_pct(w1h.uptime_pct),
-        fmt_ms(w1h.avg_ms),
+        include_str!("templates/service_item.html"),
+        id = id,
+        icon_html = icon_html,
+        dot_class = dot_class,
+        label = svc.label,
+        latency_str = latency_str,
+        check = svc.check,
+        target = svc.target,
+        uptime_1h = fmt_pct(w1h.uptime_pct),
+        avg_1h = fmt_ms(w1h.avg_ms),
+        detail_rows = detail_rows,
     )
 }
 
@@ -818,7 +533,9 @@ fn render_service_card(db: &Connection, title: &str, svcs: &[&Service], start_id
     let summary_text = format!(r#"<span class="{summary_class}">{up_count}/{total}</span>"#);
 
     let mut html = format!(
-        r#"<details class="svc-card" open><summary>{title} {summary_text}</summary><div class="services-grid">"#
+        include_str!("templates/service_card.html"),
+        title = title,
+        summary_text = summary_text,
     );
     for (i, svc) in svcs.iter().enumerate() {
         let id = format!("svc-{}", start_idx + i);
@@ -850,20 +567,11 @@ async fn handler(State(state): State<Arc<AppState>>) -> Html<String> {
     let name = &state.config.name;
 
     let mut html = format!(
-        r#"<!DOCTYPE html>
-<html><head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="refresh" content="30">
-<title>{name}</title>
-<style>{TOKENS_CSS}</style>
-<style>{APP_CSS}</style>
-</head><body>
-<div class="title-bar">
-<h1>{name}</h1>
-{services_html}
-</div>
-"#
+        include_str!("templates/page.html"),
+        name = name,
+        tokens_css = TOKENS_CSS,
+        app_css = APP_CSS,
+        services_html = services_html,
     );
 
     // LAN host cards
