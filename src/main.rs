@@ -374,25 +374,6 @@ fn query_window_stats(db: &Connection, host: &str, minutes: i64) -> WindowStats 
     .unwrap()
 }
 
-fn query_streak(db: &Connection, host: &str) -> (String, i64) {
-    let mut stmt = db
-        .prepare("SELECT status FROM ping_results WHERE host = ?1 ORDER BY id DESC LIMIT 200")
-        .unwrap();
-
-    let statuses: Vec<String> = stmt
-        .query_map(params![host], |row| row.get(0))
-        .unwrap()
-        .filter_map(|r| r.ok())
-        .collect();
-
-    if statuses.is_empty() {
-        return ("--".to_string(), 0);
-    }
-
-    let first = &statuses[0];
-    let count = statuses.iter().take_while(|s| *s == first).count() as i64;
-    (first.clone(), count)
-}
 
 fn query_latest_status(db: &Connection, host: &str) -> (String, Option<f64>) {
     db.query_row(
@@ -430,6 +411,58 @@ fn fmt_ms(v: Option<f64>) -> String {
     v.map_or("--".into(), |v| format!("{v:.1}"))
 }
 
+fn tier_class(uptime_pct: Option<f64>) -> &'static str {
+    match uptime_pct {
+        Some(p) if p >= 100.0 => "tier-perfect",
+        Some(p) if p >= 99.0  => "tier-good",
+        Some(p) if p >= 95.0  => "tier-degraded",
+        Some(p) if p > 0.0    => "tier-critical",
+        _                     => "tier-down",
+    }
+}
+
+fn query_avg_stddev(db: &Connection, host: &str, minutes: i64) -> (Option<f64>, Option<f64>) {
+    let cutoff = (Local::now() - chrono::Duration::minutes(minutes)).to_rfc3339();
+    db.query_row(
+        "SELECT AVG(latency_ms), AVG(latency_ms * latency_ms)
+         FROM ping_results WHERE host = ?1 AND timestamp > ?2 AND status = 'UP'",
+        params![host, cutoff],
+        |row| {
+            let avg: Option<f64> = row.get(0)?;
+            let avg_sq: Option<f64> = row.get(1)?;
+            let stddev = match (avg, avg_sq) {
+                (Some(a), Some(sq)) => Some((sq - a * a).max(0.0).sqrt()),
+                _ => None,
+            };
+            Ok((avg, stddev))
+        },
+    ).unwrap_or((None, None))
+}
+
+fn query_card_uptime(db: &Connection, keys: &[String], minutes: i64) -> Option<f64> {
+    if keys.is_empty() { return None; }
+    let cutoff = (Local::now() - chrono::Duration::minutes(minutes)).to_rfc3339();
+    let placeholders = std::iter::repeat("?").take(keys.len()).collect::<Vec<_>>().join(",");
+    let sql = format!(
+        "SELECT COUNT(*), SUM(CASE WHEN status='UP' THEN 1 ELSE 0 END)
+         FROM ping_results WHERE host IN ({placeholders}) AND timestamp > ?"
+    );
+    let mut stmt = db.prepare(&sql).unwrap();
+    stmt.query_row(
+        rusqlite::params_from_iter(
+            keys.iter().map(|s| s.as_str()).chain(std::iter::once(cutoff.as_str()))
+        ),
+        |row| {
+            let total: i64 = row.get(0)?;
+            let up: Option<i64> = row.get(1)?;
+            Ok(match (total, up) {
+                (t, Some(u)) if t > 0 => Some(u as f64 * 100.0 / t as f64),
+                _ => None,
+            })
+        },
+    ).unwrap_or(None)
+}
+
 // --- SVG Icons ---
 
 fn get_icon_svg(key: &str) -> &'static str {
@@ -455,15 +488,13 @@ fn render_host(db: &Connection, host: &Host, user_open: Option<bool>) -> String 
     let w1h = query_window_stats(db, &host.addr, 60);
     let w24h = query_window_stats(db, &host.addr, 1440);
     let w7d = query_window_stats(db, &host.addr, 10080);
-    let (streak_status, streak_count) = query_streak(db, &host.addr);
-
-    let streak_class = if streak_status == "UP" { "up" } else { "down" };
-    let streak_display = if streak_count > 0 {
-        format!(
-            r#"<span class="streak {streak_class}">{streak_status} &times; {streak_count}</span>"#
-        )
-    } else {
-        r#"<span class="streak">--</span>"#.to_string()
+    let tier = tier_class(w1h.uptime_pct);
+    let (cur_status, _) = query_latest_status(db, &host.addr);
+    let streak_display = match w1h.uptime_pct {
+        Some(p) => format!(
+            r#"<span class="streak {tier}" title="1h uptime">{cur_status} {p:.1}%</span>"#
+        ),
+        None => r#"<span class="streak tier-down" title="No data yet">--</span>"#.to_string(),
     };
 
     let loss_1h = w1h.uptime_pct.map(|u| 100.0 - u);
@@ -528,6 +559,17 @@ fn render_service_item(db: &Connection, svc: &Service, id: &str) -> String {
     };
     let latency_str = latency.map_or("--".to_string(), |ms| format!("{ms:.0}ms"));
 
+    let (avg_ms, stddev_ms) = query_avg_stddev(db, &key, 60);
+    let avg_stddev_str = match (avg_ms, stddev_ms) {
+        (Some(avg), Some(sd)) => format!(
+            r#"<span class="svc-avg-latency" title="1h average latency ± standard deviation">[{avg:.0}ms ±{sd:.0}]</span>"#
+        ),
+        (Some(avg), None) => format!(
+            r#"<span class="svc-avg-latency" title="1h average latency">[{avg:.0}ms]</span>"#
+        ),
+        _ => String::new(),
+    };
+
     // Query detail data
     let w1h = query_window_stats(db, &key, 60);
     let recent = query_recent_checks(db, &key, 10);
@@ -549,6 +591,7 @@ fn render_service_item(db: &Connection, svc: &Service, id: &str) -> String {
         dot_class = dot_class,
         label = svc.label,
         latency_str = latency_str,
+        avg_stddev_str = avg_stddev_str,
         check = svc.check,
         target = svc.target,
         uptime_1h = fmt_pct(w1h.uptime_pct),
@@ -568,8 +611,14 @@ fn render_service_card(db: &Connection, title: &str, svcs: &[&Service], start_id
         status == "UP"
     }).count();
     let total = svcs.len();
-    let summary_class = if up_count == total { "status-up" } else { "status-down" };
-    let summary_text = format!(r#"<span class="{summary_class}">{up_count}/{total}</span>"#);
+    let keys: Vec<String> = svcs.iter().map(|s| format!("svc:{}", s.label)).collect();
+    let card_uptime = query_card_uptime(db, &keys, 60);
+    let tier = tier_class(card_uptime);
+    let title_attr = match card_uptime {
+        Some(p) => format!("1h uptime: {p:.1}%"),
+        None    => "No data".to_string(),
+    };
+    let summary_text = format!(r#"<span class="{tier}" title="{title_attr}">{up_count}/{total}</span>"#);
 
     let open_attr = if open { " open" } else { "" };
     let mut html = format!(

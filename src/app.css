@@ -57,13 +57,22 @@ h1 {
     padding: var(--spacingVerticalXS) var(--spacingHorizontalM);
     border-radius: var(--borderRadiusMedium);
 }
-.streak.up {
-    background: var(--colorStatusSuccessBackground1);
-    color: var(--colorStatusSuccessForeground1);
+.streak.tier-perfect, .streak.tier-good, .streak.tier-degraded, .streak.tier-critical, .streak.tier-down,
+span.tier-perfect, span.tier-good, span.tier-degraded, span.tier-critical, span.tier-down {
+    font-size: var(--fontSizeBase200);
+    font-weight: var(--fontWeightSemibold);
+    padding: var(--spacingVerticalXS) var(--spacingHorizontalM);
+    border-radius: var(--borderRadiusMedium);
 }
-.streak.down {
-    background: var(--colorStatusDangerBackground1);
-    color: var(--colorStatusDangerForeground1);
+.streak.tier-perfect,  span.tier-perfect  { background: var(--colorStatusSuccessBackground1); color: var(--colorStatusSuccessForeground1); }
+.streak.tier-good,     span.tier-good     { background: var(--colorStatusSuccessBackground3); color: var(--colorStatusSuccessForeground1); }
+.streak.tier-degraded, span.tier-degraded { background: var(--colorStatusWarningBackground1); color: var(--colorStatusWarningForeground1); }
+.streak.tier-critical, span.tier-critical { background: var(--colorStatusDangerBackground3);  color: var(--colorStatusDangerForeground1); }
+.streak.tier-down,     span.tier-down     { background: var(--colorStatusDangerBackground1);  color: var(--colorStatusDangerForeground1); }
+.svc-avg-latency {
+    font-size: var(--fontSizeBase100);
+    color: var(--colorNeutralForeground3);
+    margin-left: var(--spacingHorizontalXS);
 }
 table {
     width: 100%;
