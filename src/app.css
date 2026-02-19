@@ -87,11 +87,15 @@ span.tier-perfect, span.tier-good, span.tier-degraded, span.tier-critical, span.
 table {
     width: 100%;
     border-collapse: collapse;
+    table-layout: fixed;
 }
 th, td {
     padding: var(--spacingVerticalS) var(--spacingHorizontalM);
-    text-align: left;
+    text-align: right;
     border-bottom: 1px solid var(--colorNeutralStroke2);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 th {
     background: var(--colorNeutralBackground3);
@@ -99,9 +103,13 @@ th {
     font-size: var(--fontSizeBase200);
     color: var(--colorNeutralForeground2);
 }
-.stats-section { padding: 0; }
+/* Label column — left-aligned, bold, fixed 28% width */
 .stats-section th:first-child,
-.stats-section td:first-child {
+.stats-section td:first-child,
+.pings-table th:first-child,
+.pings-table td:first-child {
+    width: 28%;
+    text-align: left;
     font-weight: var(--fontWeightSemibold);
 }
 .pings-header {

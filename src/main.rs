@@ -738,7 +738,7 @@ fn render_host(db: &Connection, host: &Host, user_open: Option<bool>) -> String 
         let latency_str = latency.map_or("--".to_string(), |v| format!("{v:.1}"));
         let class = if status == "UP" { "status-up" } else { "status-down" };
         detail_rows.push_str(&format!(
-            r#"<tr><td>{ts}</td><td class="{class}">{status}</td><td>{latency_str}</td></tr>"#
+            r#"<tr><td>{ts}</td><td></td><td></td><td class="{class}">{status}</td><td>{latency_str}</td></tr>"#
         ));
     }
     let stats_section = render_stats_section(&w5m, &w1h, &w24h, &w7d, "Last 20 pings", "Timestamp", &detail_rows);
@@ -794,7 +794,7 @@ fn render_service_item(db: &Connection, svc: &Service, id: &str, user_open: Opti
         let lat_str = lat.map_or("--".to_string(), |v| format!("{v:.1}"));
         let time = if ts.len() > 11 { &ts[11..19] } else { ts };
         detail_rows.push_str(&format!(
-            r#"<tr><td>{time}</td><td class="{cls}">{s}</td><td>{lat_str}</td></tr>"#
+            r#"<tr><td>{time}</td><td></td><td></td><td class="{cls}">{s}</td><td>{lat_str}</td></tr>"#
         ));
     }
     let stats_section = render_stats_section(&w5m, &w1h, &w24h, &w7d, "Last 10 checks", "Time", &detail_rows);
