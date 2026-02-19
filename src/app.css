@@ -141,15 +141,17 @@ tr:last-child td { border-bottom: none; }
 }
 .svc-icon { width: 20px; flex-shrink: 0; }
 .svc-icon svg, .svc-icon img { width: 20px; height: 20px; display: block; }
-.svc-dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
+.svc-status {
+    font-size: var(--fontSizeBase300);
+    font-weight: var(--fontWeightSemibold);
+    width: 1em;
+    text-align: center;
     flex-shrink: 0;
+    line-height: 1;
 }
-.svc-dot.up { background: var(--colorStatusSuccessForeground1); }
-.svc-dot.down { background: var(--colorStatusDangerForeground1); }
-.svc-dot.unknown { background: var(--colorNeutralForeground3); }
+.svc-status.up      { color: var(--colorStatusSuccessForeground1); }
+.svc-status.down    { color: var(--colorStatusDangerForeground1); }
+.svc-status.unknown { color: var(--colorNeutralForeground3); }
 .svc-label {
     font-size: var(--fontSizeBase200);
     font-weight: var(--fontWeightSemibold);

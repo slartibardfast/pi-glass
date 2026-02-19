@@ -756,10 +756,10 @@ fn render_host(db: &Connection, host: &Host, user_open: Option<bool>) -> String 
 fn render_service_item(db: &Connection, svc: &Service, id: &str, user_open: Option<bool>) -> String {
     let key = format!("svc:{}", svc.label);
     let (cur_status, latency) = query_latest_status(db, &key);
-    let dot_class = match cur_status.as_str() {
-        "UP" => "up",
-        "DOWN" => "down",
-        _ => "unknown",
+    let (dot_class, dot_char) = match cur_status.as_str() {
+        "UP"   => ("up",      "✓"),
+        "DOWN" => ("down",    "✗"),
+        _      => ("unknown", "–"),
     };
     let icon_html = if let Some(data) = &svc.icon_data {
         format!(r#"<img style="width:20px;height:20px" src="{data}">"#)
@@ -805,6 +805,7 @@ fn render_service_item(db: &Connection, svc: &Service, id: &str, user_open: Opti
         open_attr = open_attr,
         icon_html = icon_html,
         dot_class = dot_class,
+        dot_char = dot_char,
         label = svc.label,
         latency_str = latency_str,
         avg_stddev_str = avg_stddev_str,
