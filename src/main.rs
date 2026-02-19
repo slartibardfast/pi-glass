@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::net::IpAddr;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -8,6 +9,40 @@ use chrono::Local;
 use rusqlite::{params, Connection};
 use serde::Deserialize;
 use surge_ping::{Client, Config as PingConfig, PingIdentifier, PingSequence};
+
+struct UiCookie {
+    open_hosts: Option<HashSet<String>>,
+    open_svc_cards: Option<HashSet<String>>,
+}
+
+fn parse_ui_cookie(headers: &axum::http::HeaderMap) -> UiCookie {
+    let cookie_str = headers
+        .get(axum::http::header::COOKIE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+
+    let pg = cookie_str
+        .split(';')
+        .find_map(|p| p.trim().strip_prefix("pg="))
+        .unwrap_or("");
+
+    if pg.is_empty() {
+        return UiCookie { open_hosts: None, open_svc_cards: None };
+    }
+
+    let mut open_hosts = None;
+    let mut open_svc_cards = None;
+
+    for field in pg.split('&') {
+        if let Some(v) = field.strip_prefix("ho=") {
+            open_hosts = Some(v.split('|').filter(|s| !s.is_empty()).map(String::from).collect());
+        } else if let Some(v) = field.strip_prefix("sc=") {
+            open_svc_cards = Some(v.split('|').filter(|s| !s.is_empty()).map(String::from).collect());
+        }
+    }
+
+    UiCookie { open_hosts, open_svc_cards }
+}
 
 const DEFAULT_LISTEN: &str = "0.0.0.0:8080";
 const DEFAULT_DB_PATH: &str = "/opt/pi-glass/pi-glass.db";
@@ -416,7 +451,7 @@ fn get_icon_svg(key: &str) -> &'static str {
 
 // --- HTML rendering ---
 
-fn render_host(db: &Connection, host: &Host) -> String {
+fn render_host(db: &Connection, host: &Host, user_open: Option<bool>) -> String {
     let w1h = query_window_stats(db, &host.addr, 60);
     let w24h = query_window_stats(db, &host.addr, 1440);
     let w7d = query_window_stats(db, &host.addr, 10080);
@@ -436,7 +471,11 @@ fn render_host(db: &Connection, host: &Host) -> String {
     let loss_7d = w7d.uptime_pct.map(|u| 100.0 - u);
 
     let all_up_1h = w1h.uptime_pct.map_or(true, |p| p >= 100.0);
-    let open_attr = if all_up_1h { "" } else { " open" };
+    let open_attr = match user_open {
+        Some(true)  => " open",
+        Some(false) => "",
+        None        => if all_up_1h { "" } else { " open" },
+    };
 
     let mut html = format!(
         include_str!("templates/host.html"),
@@ -518,7 +557,7 @@ fn render_service_item(db: &Connection, svc: &Service, id: &str) -> String {
     )
 }
 
-fn render_service_card(db: &Connection, title: &str, svcs: &[&Service], start_idx: usize) -> String {
+fn render_service_card(db: &Connection, title: &str, svcs: &[&Service], start_idx: usize, open: bool) -> String {
     if svcs.is_empty() {
         return String::new();
     }
@@ -532,10 +571,12 @@ fn render_service_card(db: &Connection, title: &str, svcs: &[&Service], start_id
     let summary_class = if up_count == total { "status-up" } else { "status-down" };
     let summary_text = format!(r#"<span class="{summary_class}">{up_count}/{total}</span>"#);
 
+    let open_attr = if open { " open" } else { "" };
     let mut html = format!(
         include_str!("templates/service_card.html"),
         title = title,
         summary_text = summary_text,
+        open_attr = open_attr,
     );
     for (i, svc) in svcs.iter().enumerate() {
         let id = format!("svc-{}", start_idx + i);
@@ -545,7 +586,7 @@ fn render_service_card(db: &Connection, title: &str, svcs: &[&Service], start_id
     html
 }
 
-fn render_services(db: &Connection, services: &[Service]) -> String {
+fn render_services(db: &Connection, services: &[Service], ui: &UiCookie) -> String {
     if services.is_empty() {
         return String::new();
     }
@@ -555,15 +596,23 @@ fn render_services(db: &Connection, services: &[Service]) -> String {
     non_dns.sort_by(|a, b| a.label.to_lowercase().cmp(&b.label.to_lowercase()));
     dns.sort_by(|a, b| a.label.to_lowercase().cmp(&b.label.to_lowercase()));
 
-    let mut html = render_service_card(db, "Web", &non_dns, 0);
-    html.push_str(&render_service_card(db, "DNS", &dns, non_dns.len()));
+    let svc_open = |title: &str| -> bool {
+        match &ui.open_svc_cards {
+            None => true,
+            Some(set) => set.contains(title),
+        }
+    };
+
+    let mut html = render_service_card(db, "Web", &non_dns, 0, svc_open("Web"));
+    html.push_str(&render_service_card(db, "DNS", &dns, non_dns.len(), svc_open("DNS")));
     html
 }
 
-async fn handler(State(state): State<Arc<AppState>>) -> Html<String> {
+async fn handler(State(state): State<Arc<AppState>>, headers: axum::http::HeaderMap) -> Html<String> {
+    let ui = parse_ui_cookie(&headers);
     let db = state.db.lock().unwrap();
 
-    let services_html = render_services(&db, &state.config.services);
+    let services_html = render_services(&db, &state.config.services, &ui);
     let name = &state.config.name;
 
     let mut html = format!(
@@ -576,7 +625,8 @@ async fn handler(State(state): State<Arc<AppState>>) -> Html<String> {
 
     // LAN host cards
     for host in &state.config.hosts {
-        html.push_str(&render_host(&db, host));
+        let user_open = ui.open_hosts.as_ref().map(|set| set.contains(&host.addr));
+        html.push_str(&render_host(&db, host, user_open));
     }
 
     // Footer
