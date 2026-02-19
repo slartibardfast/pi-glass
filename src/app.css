@@ -26,7 +26,8 @@ h1 {
     overflow: hidden;
 }
 .host-header {
-    display: flex;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
     align-items: center;
     padding: var(--spacingVerticalM) var(--spacingHorizontalL);
     border-bottom: 1px solid var(--colorNeutralStroke2);
@@ -41,15 +42,13 @@ h1 {
     font-weight: var(--fontWeightSemibold);
 }
 .host-header .ip {
-    flex: 1;
     text-align: center;
     color: var(--colorNeutralForeground2);
     font-weight: var(--fontWeightRegular);
     font-size: var(--fontSizeBase500);
 }
 .host-header .streak {
-    flex: 1;
-    text-align: right;
+    justify-self: end;
 }
 .streak {
     font-size: var(--fontSizeBase200);
@@ -224,6 +223,35 @@ tr:last-child td { border-bottom: none; }
     z-index: 9;
 }
 .svc-backdrop.open { display: block; }
+.config-card {
+    background: var(--colorNeutralCardBackground);
+    border: 1px solid var(--colorNeutralStroke2);
+    border-radius: var(--borderRadiusLarge);
+    box-shadow: var(--shadow4);
+    margin-bottom: var(--spacingVerticalXXL);
+}
+.config-card > summary {
+    display: flex;
+    align-items: center;
+    padding: var(--spacingVerticalS) var(--spacingHorizontalL);
+    background: var(--colorNeutralBackground3);
+    border-bottom: 1px solid var(--colorNeutralStroke2);
+    cursor: pointer;
+    list-style: none;
+    font-size: var(--fontSizeBase400);
+    font-weight: var(--fontWeightSemibold);
+}
+.config-card > summary::-webkit-details-marker { display: none; }
+.config-block {
+    margin: 0;
+    padding: var(--spacingVerticalM) var(--spacingHorizontalL);
+    font-family: 'Cascadia Code', 'Consolas', 'Menlo', monospace;
+    font-size: var(--fontSizeBase200);
+    line-height: 1.6;
+    overflow-x: auto;
+    white-space: pre;
+    color: var(--colorNeutralForeground1);
+}
 footer {
     text-align: center;
     padding: var(--spacingVerticalXXL) 0 var(--spacingVerticalM);

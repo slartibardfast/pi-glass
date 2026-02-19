@@ -163,7 +163,7 @@ struct Config {
     retention_days: i64,
     #[serde(default = "default_hosts")]
     hosts: Vec<Host>,
-    #[serde(default)]
+    #[serde(default = "default_services")]
     services: Vec<Service>,
 }
 
@@ -175,9 +175,20 @@ fn default_ping_timeout() -> u64 { DEFAULT_PING_TIMEOUT_SECS }
 fn default_retention_days() -> i64 { DEFAULT_RETENTION_DAYS }
 fn default_hosts() -> Vec<Host> {
     vec![
-        Host { addr: "192.168.178.1".into(), label: "Router".into() },
-        Host { addr: "192.168.178.6".into(), label: "AP 1".into() },
-        Host { addr: "192.168.178.7".into(), label: "AP 2".into() },
+        Host { addr: "192.168.1.1".into(), label: "Gateway".into() },
+    ]
+}
+
+fn default_services() -> Vec<Service> {
+    vec![
+        Service { label: "Google".into(),         icon: "google".into(),     check: "ping".into(), target: "google.com".into(),           icon_data: None },
+        Service { label: "Cloudflare".into(),     icon: "cloudflare".into(), check: "tcp".into(),  target: "cloudflare.com:443".into(),   icon_data: None },
+        Service { label: "YouTube".into(),        icon: "youtube".into(),    check: "tcp".into(),  target: "youtube.com:443".into(),      icon_data: None },
+        Service { label: "Outlook".into(),        icon: "outlook".into(),    check: "tcp".into(),  target: "outlook.com:443".into(),      icon_data: None },
+        Service { label: "WhatsApp".into(),       icon: "whatsapp".into(),   check: "tcp".into(),  target: "web.whatsapp.com:443".into(), icon_data: None },
+        Service { label: "Cloudflare DNS".into(), icon: "cloudflare".into(), check: "dns".into(),  target: "1.1.1.1".into(),             icon_data: None },
+        Service { label: "Google DNS".into(),     icon: "google".into(),     check: "dns".into(),  target: "8.8.8.8".into(),             icon_data: None },
+        Service { label: "Quad9 DNS".into(),      icon: "dns".into(),        check: "dns".into(),  target: "9.9.9.9".into(),             icon_data: None },
     ]
 }
 
@@ -191,12 +202,110 @@ impl Default for Config {
             ping_timeout_secs: default_ping_timeout(),
             retention_days: default_retention_days(),
             hosts: default_hosts(),
-            services: Vec::new(),
+            services: default_services(),
         }
     }
 }
 
-fn load_config() -> Config {
+fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
+}
+
+fn default_config_toml() -> String {
+    r#"# pi-glass configuration — no config file found, showing defaults
+# ─────────────────────────────────────────────────────────────────
+# Place this file at:
+#   Linux:   /opt/pi-glass/config.toml   (or pass --config <path>)
+#   Windows: %LOCALAPPDATA%\pi-glass\config.toml
+#            (drop beside pi-glass.exe for automatic first-run copy)
+
+# Dashboard name shown in the browser tab and page heading
+name = "pi-glass"
+
+# Address and port to listen on
+listen = "0.0.0.0:8080"
+
+# SQLite database path (directory is created automatically on first run)
+# db_path = "/opt/pi-glass/pi-glass.db"              # Linux default
+# db_path = "%LOCALAPPDATA%\\pi-glass\\pi-glass.db"  # Windows default
+
+# Seconds between each round of checks
+poll_interval_secs = 30
+
+# Per-check timeout for ping / TCP connect / DNS query (seconds)
+ping_timeout_secs = 2
+
+# Days of history to retain in the database
+retention_days = 7
+
+# ── LAN Hosts ────────────────────────────────────────────────────
+# Monitored by ICMP ping. Each host gets a collapsible stats card.
+# Requires CAP_NET_RAW on Linux (see deploy/pi-glass.service).
+
+[[hosts]]
+addr  = "192.168.1.1"
+label = "Gateway"
+
+# ── External Services ─────────────────────────────────────────────
+# check    : "ping"  — ICMP echo to hostname or IP
+#          : "tcp"   — TCP connect to "host:port"
+#          : "dns"   — UDP DNS A-query to a nameserver IP
+# icon     : built-in key — google, bing, cloudflare, dns,
+#                           youtube, outlook, whatsapp
+# icon_data: base64 data URI override, e.g. "data:image/png;base64,…"
+# target   : hostname (ping), "host:port" (tcp), IP address (dns)
+
+[[services]]
+label  = "Google"
+icon   = "google"
+check  = "ping"
+target = "google.com"
+
+[[services]]
+label  = "Cloudflare"
+icon   = "cloudflare"
+check  = "tcp"
+target = "cloudflare.com:443"
+
+[[services]]
+label  = "YouTube"
+icon   = "youtube"
+check  = "tcp"
+target = "youtube.com:443"
+
+[[services]]
+label  = "Outlook"
+icon   = "outlook"
+check  = "tcp"
+target = "outlook.com:443"
+
+[[services]]
+label  = "WhatsApp"
+icon   = "whatsapp"
+check  = "tcp"
+target = "web.whatsapp.com:443"
+
+[[services]]
+label  = "Cloudflare DNS"
+icon   = "cloudflare"
+check  = "dns"
+target = "1.1.1.1"
+
+[[services]]
+label  = "Google DNS"
+icon   = "google"
+check  = "dns"
+target = "8.8.8.8"
+
+[[services]]
+label  = "Quad9 DNS"
+icon   = "dns"
+check  = "dns"
+target = "9.9.9.9"
+"#.to_string()
+}
+
+fn load_config() -> (Config, Option<String>) {
     let path = std::env::args()
         .nth(1)
         .filter(|a| a == "--config")
@@ -207,16 +316,16 @@ fn load_config() -> Config {
         Ok(contents) => match toml::from_str(&contents) {
             Ok(cfg) => {
                 eprintln!("Loaded config from {path}");
-                cfg
+                (cfg, None)
             }
             Err(e) => {
                 eprintln!("Failed to parse {path}: {e}, using defaults");
-                Config::default()
+                (Config::default(), Some(default_config_toml()))
             }
         },
         Err(_) => {
             eprintln!("No config at {path}, using defaults");
-            Config::default()
+            (Config::default(), Some(default_config_toml()))
         }
     }
 }
@@ -224,6 +333,7 @@ fn load_config() -> Config {
 struct AppState {
     db: Mutex<Connection>,
     config: Config,
+    config_toml: Option<String>,
 }
 
 #[tokio::main]
@@ -231,7 +341,7 @@ async fn main() {
     #[cfg(target_os = "windows")]
     bootstrap_config_from_exe();
 
-    let config = load_config();
+    let (config, config_toml) = load_config();
 
     if let Some(parent) = std::path::Path::new(&config.db_path).parent() {
         std::fs::create_dir_all(parent)
@@ -255,6 +365,7 @@ async fn main() {
     let state = Arc::new(AppState {
         db: Mutex::new(conn),
         config,
+        config_toml,
     });
 
     tokio::spawn(poll_loop(state.clone()));
@@ -743,6 +854,13 @@ async fn handler(State(state): State<Arc<AppState>>, headers: axum::http::Header
     for host in &state.config.hosts {
         let user_open = ui.open_hosts.as_ref().map(|set| set.contains(&host.addr));
         html.push_str(&render_host(&db, host, user_open));
+    }
+
+    // Config block — only shown when no config file was found
+    if let Some(ref toml) = state.config_toml {
+        html.push_str(r#"<details class="config-card" open><summary class="config-summary">config.toml — save this file to get started</summary><pre class="config-block">"#);
+        html.push_str(&html_escape(toml));
+        html.push_str("</pre></details>");
     }
 
     // Footer
