@@ -586,7 +586,9 @@ fn query_recent_checks(db: &Connection, host: &str, limit: i64) -> Vec<(String, 
 }
 
 fn fmt_pct(v: Option<f64>) -> String {
-    v.map_or("--".into(), |v| format!("{v:.1}%"))
+    v.map_or("--".into(), |v| {
+        if v <= 0.0 || v >= 100.0 { format!("{v:.0}%") } else { format!("{v:.1}%") }
+    })
 }
 
 fn fmt_ms(v: Option<f64>) -> String {

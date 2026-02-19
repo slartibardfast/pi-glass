@@ -50,9 +50,9 @@ h1 {
 .host-header .host-badge-group {
     justify-self: end;
     display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 2px;
+    flex-direction: row;
+    align-items: center;
+    gap: var(--spacingHorizontalS);
 }
 .host-avg-latency {
     font-size: var(--fontSizeBase100);
@@ -139,7 +139,8 @@ tr:last-child td { border-bottom: none; }
 .svc-item > summary::-webkit-details-marker { display: none; }
 .svc-expand {
     grid-column: 1 / -1;
-    margin: 0 calc(-1 * var(--spacingHorizontalL));
+    margin-left: calc(-1 * var(--spacingHorizontalL));
+    width: calc(100% + 2 * var(--spacingHorizontalL));
     border-top: 1px solid var(--colorNeutralStroke2);
 }
 .svc-expand-target {
@@ -191,7 +192,7 @@ tr:last-child td { border-bottom: none; }
 }
 .svc-card > summary::-webkit-details-marker { display: none; }
 .svc-card .services-grid {
-    padding: var(--spacingVerticalS) var(--spacingHorizontalL);
+    padding: var(--spacingVerticalS) var(--spacingHorizontalL) 0;
 }
 
 .svc-expand .stats-section { padding: 0; }
