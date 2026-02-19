@@ -48,7 +48,6 @@ h1 {
 }
 .host-header {
     display: flex;
-    justify-content: space-between;
     align-items: center;
     padding: var(--spacingVerticalM) var(--spacingHorizontalL);
     border-bottom: 1px solid var(--colorNeutralStroke2);
@@ -57,16 +56,21 @@ h1 {
     list-style: none;
 }
 .host-header::-webkit-details-marker { display: none; }
-.host-header h2 {
+.host-name {
+    flex: 1;
     font-size: var(--fontSizeBase500);
     font-weight: var(--fontWeightSemibold);
 }
 .host-header .ip {
+    flex: 1;
+    text-align: center;
     color: var(--colorNeutralForeground2);
     font-weight: var(--fontWeightRegular);
-    display: block;
-    text-align: center;
-    font-size: var(--fontSizeBase300);
+    font-size: var(--fontSizeBase500);
+}
+.host-header .streak {
+    flex: 1;
+    text-align: right;
 }
 .streak {
     font-size: var(--fontSizeBase200);
@@ -691,7 +695,8 @@ fn render_host(db: &Connection, host: &Host) -> String {
     let mut html = format!(
         r#"<details class="host-card"{open_attr}>
 <summary class="host-header">
-  <h2>{} <span class="ip">({})</span></h2>
+  <span class="host-name">{}</span>
+  <span class="ip">{}</span>
   {streak_display}
 </summary>
 <div class="stats-section">
