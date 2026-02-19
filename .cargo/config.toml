@@ -1,3 +1,7 @@
 [target.arm-unknown-linux-musleabihf]
 linker = "/home/david/.local/arm-linux-musleabihf-cross/bin/arm-linux-musleabihf-gcc"
 rustflags = ["-C", "target-feature=+crt-static"]
+
+[target.mipsel-unknown-linux-musl]
+linker = "/home/david/pi-glass/mips-ld-wrapper.sh"
+rustflags = ["-C", "panic=abort", "-C", "opt-level=s", "-C", "target-feature=+crt-static"]

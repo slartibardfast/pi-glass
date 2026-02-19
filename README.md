@@ -31,36 +31,73 @@ pi-glass/
 
 ## Cross-compilation
 
-Pi Zero is ARMv6. Ubuntu's `arm-linux-gnueabihf` toolchain ships ARMv7 CRT files which produce binaries that segfault on Pi Zero. We use musl instead for a fully static binary:
+Two targets are supported. Both use [musl.cc](https://musl.cc/) cross-compilers for fully static binaries with no runtime dependencies.
+
+### Pi Zero (ARMv6)
+
+Ubuntu's `arm-linux-gnueabihf` toolchain ships ARMv7 CRT files which segfault on Pi Zero. Musl avoids this.
 
 | | |
 |---|---|
 | **Target** | `arm-unknown-linux-musleabihf` |
-| **Toolchain** | [musl.cc](https://musl.cc/) cross-compiler |
+| **Toolchain** | `arm-linux-musleabihf-cross` from musl.cc |
 | **Install to** | `~/.local/arm-linux-musleabihf-cross/` |
 
+### MT76x8 / OpenWRT (MIPS32r2 little-endian)
+
+Targets MediaTek MT76x8-based routers running OpenWRT (e.g. MT7628, MT7688). The OpenWRT `ramips/mt76x8` target is little-endian (`mipsel`). Tier 3 Rust target — requires nightly and `build-std`.
+
+| | |
+|---|---|
+| **Target** | `mipsel-unknown-linux-musl` |
+| **Toolchain** | `mipsel-linux-muslsf-cross` from musl.cc (`sf` = soft-float) |
+| **Install to** | `~/.local/mipsel-linux-muslsf-cross/` |
+
+The linker wrapper `mips-ld-wrapper.sh` is required because Rust passes CRT startup files (`crt1.o` etc.) as bare names to the linker, which can't find them without full paths. The wrapper also remaps `-lunwind` to `-lgcc_eh` since the musl.cc toolchain provides unwind support via GCC's exception-handling library rather than LLVM libunwind. Linker and RUSTFLAGS are configured in `.cargo/config.toml`; only the C compiler env vars live in `build-mt76x8.env`.
+
 ## Build & deploy
+
+### Pi Zero
 
 ```bash
 # Generate CSS tokens (one-time)
 cd web && npm install && npm run build && cd ..
 
-# Build for Pi Zero (in WSL2)
+# Build
 . ./build.env
 cargo build --release
 
-# Or explicitly:
-# cargo build --release --target arm-unknown-linux-musleabihf
-
-# Strip (optional, saves ~2MB)
+# Strip
 ~/.local/arm-linux-musleabihf-cross/bin/arm-linux-musleabihf-strip \
   target/arm-unknown-linux-musleabihf/release/pi-glass
 
-# Deploy to Pi
+# Deploy
 scp target/arm-unknown-linux-musleabihf/release/pi-glass pi@<ip>:/opt/pi-glass/
 scp deploy/config.toml pi@<ip>:/opt/pi-glass/
 scp deploy/pi-glass.service pi@<ip>:/etc/systemd/system/
+ssh pi@<ip> "sudo systemctl daemon-reload && sudo systemctl enable --now pi-glass"
+```
 
-# Enable service
-sudo systemctl daemon-reload && sudo systemctl enable --now pi-glass
+### MT76x8 / OpenWRT
+
+```bash
+# Generate CSS tokens (one-time)
+cd web && npm install && npm run build && cd ..
+
+# Make the linker wrapper executable (one-time)
+chmod +x mips-ld-wrapper.sh
+
+# Build (nightly required; build-std compiles std from source for Tier 3 target)
+. ./build-mt76x8.env
+cargo +nightly build -Z build-std=std,panic_abort --release
+
+# Strip
+~/.local/mipsel-linux-muslsf-cross/bin/mipsel-linux-muslsf-strip \
+  target/mipsel-unknown-linux-musl/release/pi-glass
+
+# Deploy
+scp target/mipsel-unknown-linux-musl/release/pi-glass root@<ip>:/usr/bin/pi-glass
+scp pi-glass.init root@<ip>:/etc/init.d/pi-glass
+ssh root@<ip> "chmod +x /etc/init.d/pi-glass /usr/bin/pi-glass \
+  && service pi-glass enable && service pi-glass start"
 ```
