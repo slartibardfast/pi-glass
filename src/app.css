@@ -116,29 +116,16 @@ th {
 tr:last-child td { border-bottom: none; }
 
 /* Services bar */
-.services-grid {
-    display: grid;
-    grid-template-columns: 20px 12px 1fr auto auto;
-    gap: var(--spacingVerticalXS) var(--spacingHorizontalXS);
-    align-items: center;
-}
-.svc-item {
-    display: grid;
-    grid-template-columns: subgrid;
-    grid-column: 1 / -1;
-}
 .svc-item > summary {
-    display: grid;
-    grid-template-columns: subgrid;
-    grid-column: 1 / -1;
+    display: flex;
     align-items: center;
+    gap: var(--spacingHorizontalXS);
     list-style: none;
     cursor: pointer;
     padding: var(--spacingVerticalXS) 0;
 }
 .svc-item > summary::-webkit-details-marker { display: none; }
 .svc-expand {
-    grid-column: 1 / -1;
     margin-left: calc(-1 * var(--spacingHorizontalL));
     width: calc(100% + 2 * var(--spacingHorizontalL));
     border-top: 1px solid var(--colorNeutralStroke2);
@@ -150,12 +137,13 @@ tr:last-child td { border-bottom: none; }
     background: var(--colorNeutralBackground3);
     border-bottom: 1px solid var(--colorNeutralStroke2);
 }
+.svc-icon { width: 20px; flex-shrink: 0; }
 .svc-icon svg, .svc-icon img { width: 20px; height: 20px; display: block; }
 .svc-dot {
     width: 10px;
     height: 10px;
     border-radius: 50%;
-    justify-self: center;
+    flex-shrink: 0;
 }
 .svc-dot.up { background: var(--colorStatusSuccessForeground1); }
 .svc-dot.down { background: var(--colorStatusDangerForeground1); }
@@ -164,11 +152,13 @@ tr:last-child td { border-bottom: none; }
     font-size: var(--fontSizeBase200);
     font-weight: var(--fontWeightSemibold);
     white-space: nowrap;
+    flex: 1;
+    min-width: 0;
 }
 .svc-latency {
     font-size: var(--fontSizeBase100);
     color: var(--colorNeutralForeground2);
-    text-align: right;
+    white-space: nowrap;
 }
 .svc-card {
     background: var(--colorNeutralCardBackground);
@@ -193,6 +183,7 @@ tr:last-child td { border-bottom: none; }
 .svc-card > summary::-webkit-details-marker { display: none; }
 .svc-card .services-grid {
     padding: var(--spacingVerticalS) var(--spacingHorizontalL) 0;
+    /* block layout — no CSS grid, svc-items stack vertically */
 }
 
 .svc-expand .stats-section { padding: 0; }
