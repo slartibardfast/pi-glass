@@ -31,6 +31,19 @@ struct AppState {
     resolved_ips: Mutex<HashMap<String, Option<String>>>,
 }
 
+async fn cors_headers(
+    req: axum::http::Request<axum::body::Body>,
+    next: axum::middleware::Next,
+) -> impl axum::response::IntoResponse {
+    let mut resp = next.run(req).await;
+    let h = resp.headers_mut();
+    h.insert(axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN,
+             axum::http::HeaderValue::from_static("*"));
+    h.insert(axum::http::HeaderName::from_static("access-control-allow-private-network"),
+             axum::http::HeaderValue::from_static("true"));
+    resp
+}
+
 async fn serve_font() -> impl axum::response::IntoResponse {
     (
         [
@@ -84,6 +97,7 @@ async fn main() {
     let app = axum::Router::new()
         .route("/", axum::routing::get(handler))
         .route("/font/sparks.woff2", axum::routing::get(serve_font))
+        .layer(axum::middleware::from_fn(cors_headers))
         .with_state(state.clone());
 
     let listener = tokio::net::TcpListener::bind(&state.config.listen)
