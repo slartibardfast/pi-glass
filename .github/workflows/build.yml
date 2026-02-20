@@ -84,7 +84,7 @@ jobs:
         if: matrix.tc != '' && steps.tc-cache.outputs.cache-hit != 'true'
         run: |
           mkdir -p ~/.local
-          curl -fL "https://musl.cc/${{ matrix.tc }}.tgz" | tar -xz -C ~/.local
+          curl -fL "https://github.com/slartibardfast/pi-glass/releases/download/toolchains-v1/${{ matrix.tc }}.tgz" | tar -xz -C ~/.local
 
       - name: Install apt packages
         if: matrix.apt != ''
