@@ -1,6 +1,6 @@
 # pi-glass
 
-Lightweight network monitor for Raspberry Pi Zero. Single Rust binary, low-JS dashboard with Fluent 2 styling.
+Lightweight network monitor for Raspberry Pi and embedded Linux. Single Rust binary, low-JS dashboard with Fluent 2 styling.
 
 ## Features
 
@@ -10,6 +10,8 @@ Lightweight network monitor for Raspberry Pi Zero. Single Rust binary, low-JS da
 - **TOML config** — LAN hosts, external services, listen addr, db path, poll intervals, retention
 - **Fluent 2 styling** — tokens extracted at build time via Node.js, embedded via `include_str!`
 - **Auto-refresh** — `<meta http-equiv="refresh" content="30">`
+- **Daily email reports** — `pi-glass-mailer` daemon sends a daily HTML digest via the Mailgun API; CSS variables are inlined for compatibility with email clients
+- **CORS headers** — `Access-Control-Allow-Origin: *` and `Access-Control-Allow-Private-Network: true` on all responses
 
 ## Project structure
 
@@ -18,19 +20,26 @@ pi-glass/
 ├── .cargo/config.toml          # cross-compile linker config (musl)
 ├── .gitignore                  # /target, *.db, node_modules, web/dist
 ├── build-pi.env                # ARMv6 musl cross-compiler env — source before building
+├── build-aarch64.env           # AArch64 musl cross-compiler env — source before building
 ├── build-mt76x8.env            # MIPS musl cross-compiler env — source before building
 ├── build-x86_64.env            # x86_64 musl env — source before building
 ├── build-win64.env             # Windows x64 MinGW env — source before building
 ├── build-pi.sh                 # convenience: source env + cargo build + strip (Pi Zero)
+├── build-aarch64.sh            # convenience: source env + cargo build + strip (Pi 64-bit)
 ├── build-mips.sh               # convenience: source env + cargo +nightly build + strip (MT76x8)
 ├── build-x86_64.sh             # convenience: source env + cargo build + strip (x86_64)
 ├── build-win64.sh              # convenience: source env + cargo build + strip (Windows x64)
 ├── init-wsl.sh                 # one-time WSL2/Ubuntu dev environment setup
-├── Cargo.toml                  # 7 deps: tokio, axum, rusqlite, surge-ping, chrono, serde, toml
-├── src/main.rs                 # config, poller, stats, services, web handler
+├── Cargo.toml                  # 8 deps: tokio, axum, rusqlite, surge-ping, chrono, serde, toml, reqwest
+├── src/
+│   ├── main.rs                 # server binary: HTTP handler, poller, stats
+│   ├── lib.rs                  # shared: config types, DB schema, icon registry
+│   └── bin/
+│       └── mailer.rs           # pi-glass-mailer: daily email digest via Mailgun
 ├── deploy/
 │   ├── config.toml             # LAN hosts + external services config
-│   └── pi-glass.service        # systemd unit with CAP_NET_RAW
+│   ├── pi-glass.service        # systemd unit with CAP_NET_RAW
+│   └── pi-glass-mailer.service # systemd timer unit for daily email
 └── web/
     ├── package.json            # @fluentui/tokens dependency
     ├── build.js                # extracts 459 Fluent 2 tokens → dist/tokens.css
@@ -39,7 +48,7 @@ pi-glass/
 
 ## Cross-compilation
 
-Four targets are supported. All use musl or MinGW for fully static binaries with no runtime dependencies. Each target has a corresponding `.env` file that exports `CC`, `AR`, `CARGO_BUILD_TARGET`, `STRIP`, and `EXEC` — source it before building so `$STRIP $EXEC` works consistently across targets.
+Five targets are supported. All use musl or MinGW for fully static binaries with no runtime dependencies. Each target has a corresponding `.env` file that exports `CC`, `AR`, `CARGO_BUILD_TARGET`, `STRIP`, and `EXEC` — source it before building so `$STRIP $EXEC` works consistently across targets.
 
 ### Pi Zero (ARMv6)
 
@@ -50,6 +59,23 @@ Ubuntu's `arm-linux-gnueabihf` toolchain ships ARMv7 CRT files which segfault on
 | **Target** | `arm-unknown-linux-musleabihf` |
 | **Toolchain** | `arm-linux-musleabihf-cross` from musl.cc |
 | **Install to** | `~/.local/arm-linux-musleabihf-cross/` |
+
+### Pi 3 / Pi 4 / Pi 5 / Pi Zero 2 W (AArch64)
+
+Covers all 64-bit Raspberry Pi boards running 64-bit Raspberry Pi OS. Tier 1 target — stable Rust, prebuilt std, no special CFLAGS needed.
+
+| | |
+|---|---|
+| **Target** | `aarch64-unknown-linux-musl` |
+| **Toolchain** | `aarch64-linux-musl-cross` from musl.cc |
+| **Install to** | `~/.local/aarch64-linux-musl-cross/` |
+
+One-time setup (handled by `init-wsl.sh`):
+
+```bash
+rustup target add aarch64-unknown-linux-musl
+# Download aarch64-linux-musl-cross.tgz from musl.cc and extract to ~/.local/
+```
 
 ### MT76x8 / OpenWRT (MIPS32r2 little-endian)
 
@@ -93,6 +119,7 @@ Key `config.toml` options (full annotated example in `deploy/config.toml`):
 | `ping_timeout_secs` | `2` | Per-check timeout |
 | `retention_days` | `7` | Days of history to keep |
 | `wal_mode` | `false` | Enable SQLite WAL journal mode |
+| `[mailer]` | — | Mailgun credentials for `pi-glass-mailer`; see `deploy/config.toml` |
 
 ### WAL mode
 
@@ -135,6 +162,24 @@ scp $EXEC pi@pi-glass:/opt/pi-glass/
 scp deploy/config.toml pi@pi-glass:/opt/pi-glass/
 scp deploy/pi-glass.service pi@pi-glass:/etc/systemd/system/
 ssh pi@pi-glass "sudo systemctl daemon-reload && sudo systemctl enable --now pi-glass"
+```
+
+### Pi 3 / Pi 4 / Pi 5 / Pi Zero 2 W (AArch64)
+
+```bash
+# Generate CSS tokens (one-time)
+cd web && npm install && npm run build && cd ..
+
+# Build
+. ./build-aarch64.env
+cargo build --release
+
+# Strip and deploy
+$STRIP $EXEC && $STRIP $MAILER_EXEC
+scp $EXEC pi@hostname:/opt/pi-glass/
+scp deploy/config.toml pi@hostname:/opt/pi-glass/
+scp deploy/pi-glass.service pi@hostname:/etc/systemd/system/
+ssh pi@hostname "sudo systemctl daemon-reload && sudo systemctl enable --now pi-glass"
 ```
 
 ### MT76x8 / OpenWRT

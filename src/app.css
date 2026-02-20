@@ -68,21 +68,9 @@ h1 {
     border-radius: var(--borderRadiusMedium);
     min-width: 3.5em;
     text-align: center;
+    color: var(--colorNeutralForeground2);
 }
-.streak.tier-perfect, .streak.tier-good, .streak.tier-degraded, .streak.tier-critical, .streak.tier-down,
-span.tier-perfect, span.tier-good, span.tier-degraded, span.tier-critical, span.tier-down {
-    font-size: var(--fontSizeBase200);
-    font-weight: var(--fontWeightSemibold);
-    padding: var(--spacingVerticalXS) var(--spacingHorizontalM);
-    border-radius: var(--borderRadiusMedium);
-}
-/* Tier badges — all pairs verified WCAG AA (≥4.5:1) with lighter backgrounds for dark-mode readiness */
-.streak.tier-perfect,  span.tier-perfect  { background: var(--colorStatusSuccessBackground2); color: var(--colorStatusSuccessForeground2); } /* 6.86:1 */
-.streak.tier-good,     span.tier-good     { background: var(--colorStatusSuccessBackground1); color: var(--colorStatusSuccessForeground1); } /* 5.89:1 */
-.streak.tier-degraded, span.tier-degraded { background: var(--colorStatusWarningBackground1); color: var(--colorStatusWarningForeground1); } /* 4.85:1 */
-.streak.tier-critical, span.tier-critical { background: var(--colorStatusDangerBackground1);  color: var(--colorStatusDangerForeground1);  } /* 6.55:1 */
-.streak.tier-down,     span.tier-down     { background: var(--colorStatusDangerBackground2);  color: var(--colorStatusDangerForeground2);  } /* 6.55:1 */
-.streak.tier-neutral,  span.tier-neutral  { background: var(--colorNeutralBackground4);        color: var(--colorNeutralForeground2);        }
+
 .spark {
     font-family: 'Sparks';
     font-feature-settings: "calt";

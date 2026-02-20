@@ -16,7 +16,8 @@ addr = "192.168.1.1"
 label = "Gateway"
 
 # External service checks
-# icon: google, bing, cloudflare, dns, youtube, outlook, whatsapp (built-in keys)
+# icon: google, bing, cloudflare, quad9, dns, youtube, outlook, whatsapp,
+#       digiweb, heanet, dkit  (omit for globe fallback)
 # icon_data: optional base64 data URI override (e.g. "data:image/png;base64,...")
 # check: "ping" (ICMP), "tcp" (TCP connect), "dns" (UDP query)
 

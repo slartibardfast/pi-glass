@@ -601,9 +601,9 @@ pub fn render_host(db: &Connection, host: &Host, user_open: Option<bool>) -> Str
         "DOWN" => ("down",    "✗"),
         _      => ("unknown", "–"),
     };
+    let uptime_pct = fmt_pct(w1h.uptime_pct);
     let streak_display = format!(
-        r#"<span class="host-badge-group"><span class="svc-latency">{spark_str}{latency_str}</span><span class="streak {tier}">{}</span><span class="svc-status {dot_class}">{dot_char}</span></span>"#,
-        fmt_pct(w1h.uptime_pct)
+        r#"<span class="host-badge-group"><span class="svc-latency">{spark_str}{latency_str}</span><span class="streak {tier}" title="1h uptime: {uptime_pct}">{uptime_pct}</span><span class="svc-status {dot_class}">{dot_char}</span></span>"#,
     );
 
     let all_up_1h = w1h.uptime_pct.map_or(true, |p| p >= 100.0);
@@ -659,6 +659,7 @@ pub fn render_service_item(db: &Connection, svc: &Service, id: &str, user_open: 
     let w7d  = query_window_stats(db, &key, 10080);
     let tier = state_tier(&cur_status);
     let uptime_badge = fmt_pct(w1h.uptime_pct);
+    let streak_title = format!("1h uptime: {uptime_badge}");
     let open_attr = if user_open.unwrap_or(false) { " open" } else { "" };
 
     let recent = query_recent_checks(db, &key, 40);
@@ -694,6 +695,7 @@ pub fn render_service_item(db: &Connection, svc: &Service, id: &str, user_open: 
         spark_str = spark_str,
         tier = tier,
         uptime_badge = uptime_badge,
+        streak_title = streak_title,
         check = svc.check,
         target = svc.target,
         resolved_ip_html = resolved_ip_html,

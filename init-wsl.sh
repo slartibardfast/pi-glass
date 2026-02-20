@@ -24,6 +24,7 @@ rustup toolchain install stable nightly
 rustup component add rust-src --toolchain nightly
 rustup target add \
     arm-unknown-linux-musleabihf \
+    aarch64-unknown-linux-musl \
     x86_64-unknown-linux-musl \
     x86_64-pc-windows-gnu
 
@@ -34,6 +35,12 @@ ARM_TC="arm-linux-musleabihf-cross"
 if [ ! -d "$MUSL_DIR/$ARM_TC" ]; then
     echo "Downloading $ARM_TC..."
     curl -L "https://musl.cc/$ARM_TC.tgz" | tar -xz -C "$MUSL_DIR"
+fi
+
+AARCH64_TC="aarch64-linux-musl-cross"
+if [ ! -d "$MUSL_DIR/$AARCH64_TC" ]; then
+    echo "Downloading $AARCH64_TC..."
+    curl -L "https://musl.cc/$AARCH64_TC.tgz" | tar -xz -C "$MUSL_DIR"
 fi
 
 MIPS_TC="mipsel-linux-muslsf-cross"
