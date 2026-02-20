@@ -81,6 +81,42 @@ Cross-compiled from Linux using MinGW. Statically links the CRT — no MSVCRT or
 | **Target** | `x86_64-pc-windows-gnu` |
 | **Toolchain** | `gcc-mingw-w64-x86-64` (Ubuntu: `apt install gcc-mingw-w64-x86-64`) |
 
+## Configuration
+
+Key `config.toml` options (full annotated example in `deploy/config.toml`):
+
+| Key | Default | Notes |
+|---|---|---|
+| `listen` | `0.0.0.0:8080` | Bind address |
+| `db_path` | platform default | SQLite database path |
+| `poll_interval_secs` | `30` | Seconds between check rounds |
+| `ping_timeout_secs` | `2` | Per-check timeout |
+| `retention_days` | `7` | Days of history to keep |
+| `wal_mode` | `false` | Enable SQLite WAL journal mode |
+
+### WAL mode
+
+WAL mode (`wal_mode = true`) eliminates lock contention when `pi-glass-mailer` reads
+the database while the server is writing. It is **off by default** because some embedded
+filesystems (including certain Pi/overlayfs mounts) cannot create the required `.db-shm`
+shared-memory file (`SQLITE_IOERR_SHMSIZE`).
+
+Enable it only on systems with a normal POSIX filesystem (e.g. ext4 on x86_64):
+
+```toml
+wal_mode = true
+```
+
+**Downgrading a WAL database** — WAL mode is stored in the database file header. If you
+need to move a WAL-enabled database to a system that doesn't support it, convert it first:
+
+```sh
+sqlite3 pi-glass.db "PRAGMA wal_checkpoint(TRUNCATE); PRAGMA journal_mode=DELETE;"
+```
+
+> **Warning:** do not copy a WAL-mode database directly to a Pi without downgrading —
+> the Pi will fail to open it.
+
 ## Build & deploy
 
 ### Pi Zero

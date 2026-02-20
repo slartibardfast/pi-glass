@@ -4,7 +4,12 @@ db_path = "/opt/pi-glass/pi-glass.db"
 poll_interval_secs = 30
 ping_timeout_secs = 2
 retention_days = 7
-# wal_mode = true   # enable only on filesystems that support shared memory
+# Enable WAL journal mode for concurrent read/write access (e.g. when running pi-glass-mailer).
+# Requires a POSIX filesystem that supports shared memory — NOT supported on all Pi/overlayfs mounts.
+# WARNING: WAL mode is stored in the database file header. To move the database back to a system
+# that doesn't support WAL, downgrade it first:
+#   sqlite3 pi-glass.db "PRAGMA wal_checkpoint(TRUNCATE); PRAGMA journal_mode=DELETE;"
+# wal_mode = true
 
 [[hosts]]
 addr = "192.168.1.1"
