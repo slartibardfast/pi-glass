@@ -127,7 +127,7 @@ fn default_services() -> Vec<Service> {
         Service { label: "WhatsApp".into(),       icon: "whatsapp".into(),   check: "tcp".into(),  target: "web.whatsapp.com:443".into(), icon_data: None },
         Service { label: "Cloudflare DNS".into(), icon: "cloudflare".into(), check: "dns".into(),  target: "1.1.1.1".into(),             icon_data: None },
         Service { label: "Google DNS".into(),     icon: "google".into(),     check: "dns".into(),  target: "8.8.8.8".into(),             icon_data: None },
-        Service { label: "Quad9 DNS".into(),      icon: "dns".into(),        check: "dns".into(),  target: "9.9.9.9".into(),             icon_data: None },
+        Service { label: "Quad9 DNS".into(),      icon: "quad9".into(),      check: "dns".into(),  target: "9.9.9.9".into(),             icon_data: None },
     ]
 }
 
@@ -302,7 +302,7 @@ target = "8.8.8.8"
 
 [[services]]
 label  = "Quad9 DNS"
-icon   = "dns"
+icon   = "quad9"
 check  = "dns"
 target = "9.9.9.9"
 "#.to_string()
@@ -530,12 +530,12 @@ pub fn get_icon_svg(key: &str) -> &'static str {
         "bing"       => include_str!("icons/bing.svg"),
         "heanet"     => include_str!("icons/heanet.html"),
         "digiweb"    => include_str!("icons/digiweb.html"),
-        "digiweb-dns"=> include_str!("icons/digiweb-dns.svg"),
         "dkit"       => include_str!("icons/dkit.svg"),
         "youtube"    => include_str!("icons/youtube.html"),
         "outlook"    => include_str!("icons/outlook.html"),
         "whatsapp"   => include_str!("icons/whatsapp.svg"),
         "cloudflare" => include_str!("icons/cloudflare.svg"),
+        "quad9"      => include_str!("icons/quad9.svg"),
         "dns"        => include_str!("icons/dns.svg"),
         _            => include_str!("icons/fallback.svg"),
     }

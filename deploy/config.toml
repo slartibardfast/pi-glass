@@ -58,7 +58,7 @@ target = "8.8.8.8"
 
 [[services]]
 label = "Quad9 DNS"
-icon = "dns"
+icon = "quad9"
 check = "dns"
 target = "9.9.9.9"
 
