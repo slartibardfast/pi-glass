@@ -46,18 +46,20 @@ h1 {
     font-size: var(--fontSizeBase500);
     font-weight: var(--fontWeightSemibold);
 }
-.host-header .ip {
-    text-align: center;
+.ip {
     color: var(--colorNeutralForeground2);
     font-weight: var(--fontWeightRegular);
-    font-size: var(--fontSizeBase500);
+}
+.host-header .ip {
+    text-align: center;
+    font-size: var(--fontSizeBase300);
 }
 .host-header .host-badge-group {
     justify-self: end;
-    display: flex;
-    flex-direction: row;
+    display: grid;
+    grid-template-columns: auto 4em 1em;
     align-items: center;
-    gap: var(--spacingHorizontalS);
+    gap: var(--spacingHorizontalXS);
 }
 .streak {
     font-size: var(--fontSizeBase200);
@@ -116,7 +118,10 @@ th {
     width: 40%;
     text-align: left;
     font-weight: var(--fontWeightSemibold);
+    font-size: var(--fontSizeBase200);
 }
+/* Data value cells — normalised to smallest ms-measurement size */
+.stats-section td:not(:first-child) { font-size: var(--fontSizeBase100); }
 .pings-header {
     padding: var(--spacingVerticalS) var(--spacingHorizontalL);
     border-bottom: 1px solid var(--colorNeutralStroke2);
@@ -141,7 +146,7 @@ th {
     font-weight: var(--fontWeightSemibold);
     color: var(--colorNeutralForeground2);
 }
-.pg-row span:nth-child(2) { text-align: right; }
+.pg-row span:nth-child(2) { text-align: right; font-size: var(--fontSizeBase100); }
 .pg-row span:nth-child(3) { text-align: center; }
 .pg-row:last-child { border-bottom: none; }
 .status-up { color: var(--colorStatusSuccessForeground1); font-weight: var(--fontWeightSemibold); }
@@ -166,7 +171,7 @@ tr:last-child td { border-bottom: none; }
     border-top: 1px solid var(--colorNeutralStroke2);
 }
 .svc-expand-target {
-    padding: var(--spacingVerticalXS) var(--spacingHorizontalL);
+    padding: var(--spacingVerticalS) var(--spacingHorizontalL);
     font-size: var(--fontSizeBase200);
     color: var(--colorNeutralForeground2);
     background: var(--colorNeutralBackground3);
@@ -222,7 +227,7 @@ tr:last-child td { border-bottom: none; }
 .svc-card-right  { justify-self: end; }
 details.svc-card[open] .svc-card-count { display: none; }
 .svc-card .services-grid {
-    padding: var(--spacingVerticalS) var(--spacingHorizontalL) 0;
+    padding: var(--spacingVerticalS) var(--spacingHorizontalL);
     /* block layout — no CSS grid, svc-items stack vertically */
 }
 
@@ -268,3 +273,8 @@ footer {
 }
 footer a { color: var(--colorBrandForeground1); text-decoration: none; }
 footer a:hover { text-decoration: underline; }
+
+/* Responsive — phone portrait (≤480px covers all phones incl. iPhone 15 Pro Max at 430px) */
+@media (max-width: 480px) {
+    .spark, .spark-pad { display: none; }
+}

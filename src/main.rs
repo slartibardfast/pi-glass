@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::net::IpAddr;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -340,6 +340,7 @@ struct AppState {
     db: Mutex<Connection>,
     config: Config,
     config_toml: Option<String>,
+    resolved_ips: Mutex<HashMap<String, Option<String>>>,
 }
 
 async fn serve_font() -> impl axum::response::IntoResponse {
@@ -382,6 +383,7 @@ async fn main() {
         db: Mutex::new(conn),
         config,
         config_toml,
+        resolved_ips: Mutex::new(HashMap::new()),
     });
 
     tokio::spawn(poll_loop(state.clone()));
@@ -401,13 +403,13 @@ async fn main() {
 
 // --- Service check functions ---
 
-async fn check_ping(client: &Client, target: &str, seq: u16, timeout_secs: u64) -> (bool, Option<f64>) {
+async fn check_ping(client: &Client, target: &str, seq: u16, timeout_secs: u64) -> (bool, Option<f64>, Option<String>) {
     let addr: IpAddr = match tokio::net::lookup_host(format!("{target}:0")).await {
         Ok(mut addrs) => match addrs.next() {
             Some(sa) => sa.ip(),
-            None => return (false, None),
+            None => return (false, None, None),
         },
-        Err(_) => return (false, None),
+        Err(_) => return (false, None, None),
     };
 
     let mut pinger = client.pinger(addr, PingIdentifier(0xAB)).await;
@@ -415,36 +417,37 @@ async fn check_ping(client: &Client, target: &str, seq: u16, timeout_secs: u64) 
 
     let payload = [0u8; 56];
     match pinger.ping(PingSequence(seq), &payload).await {
-        Ok((_packet, duration)) => (true, Some(duration.as_secs_f64() * 1000.0)),
-        Err(_) => (false, None),
+        Ok((_packet, duration)) => (true, Some(duration.as_secs_f64() * 1000.0), Some(addr.to_string())),
+        Err(_) => (false, None, Some(addr.to_string())),
     }
 }
 
-async fn check_dns(nameserver: &str, timeout_secs: u64) -> (bool, Option<f64>) {
+async fn check_dns(nameserver: &str, timeout_secs: u64) -> (bool, Option<f64>, Option<String>) {
     let addr = format!("{nameserver}:53");
     let bind_addr = if nameserver.contains(':') { "[::]:0" } else { "0.0.0.0:0" };
     let sock = match tokio::net::UdpSocket::bind(bind_addr).await {
         Ok(s) => s,
-        Err(_) => return (false, None),
+        Err(_) => return (false, None, None),
     };
 
     if sock.connect(&addr).await.is_err() {
-        return (false, None);
+        return (false, None, None);
     }
 
     let start = Instant::now();
     if sock.send(&DNS_QUERY).await.is_err() {
-        return (false, None);
+        return (false, None, None);
     }
 
     let mut buf = [0u8; 512];
+    // nameserver IS the IP — no resolution to show
     match tokio::time::timeout(Duration::from_secs(timeout_secs), sock.recv(&mut buf)).await {
-        Ok(Ok(n)) if n > 0 => (true, Some(start.elapsed().as_secs_f64() * 1000.0)),
-        _ => (false, None),
+        Ok(Ok(n)) if n > 0 => (true, Some(start.elapsed().as_secs_f64() * 1000.0), None),
+        _ => (false, None, None),
     }
 }
 
-async fn check_tcp(target: &str, timeout_secs: u64) -> (bool, Option<f64>) {
+async fn check_tcp(target: &str, timeout_secs: u64) -> (bool, Option<f64>, Option<String>) {
     let start = Instant::now();
     match tokio::time::timeout(
         Duration::from_secs(timeout_secs),
@@ -452,8 +455,11 @@ async fn check_tcp(target: &str, timeout_secs: u64) -> (bool, Option<f64>) {
     )
     .await
     {
-        Ok(Ok(_)) => (true, Some(start.elapsed().as_secs_f64() * 1000.0)),
-        _ => (false, None),
+        Ok(Ok(stream)) => {
+            let peer_ip = stream.peer_addr().ok().map(|a| a.ip().to_string());
+            (true, Some(start.elapsed().as_secs_f64() * 1000.0), peer_ip)
+        }
+        _ => (false, None, None),
     }
 }
 
@@ -495,25 +501,28 @@ async fn poll_loop(state: Arc<AppState>) {
 
         // External services
         for svc in &state.config.services {
-            let (up, latency_ms) = match svc.check.as_str() {
+            let (up, latency_ms, resolved_ip) = match svc.check.as_str() {
                 "ping" => check_ping(&client, &svc.target, seq, state.config.ping_timeout_secs).await,
                 "dns" => check_dns(&svc.target, state.config.ping_timeout_secs).await,
                 "tcp" => check_tcp(&svc.target, state.config.ping_timeout_secs).await,
                 other => {
                     eprintln!("Unknown check type '{}' for service '{}'", other, svc.label);
-                    (false, None)
+                    (false, None, None)
                 }
             };
 
             let status = if up { "UP" } else { "DOWN" };
             let key = format!("svc:{}", svc.label);
             let now = Local::now().to_rfc3339();
-            let db = state.db.lock().unwrap();
-            db.execute(
-                "INSERT INTO ping_results (host, timestamp, status, latency_ms) VALUES (?1, ?2, ?3, ?4)",
-                params![key, now, status, latency_ms],
-            )
-            .unwrap();
+            {
+                let db = state.db.lock().unwrap();
+                db.execute(
+                    "INSERT INTO ping_results (host, timestamp, status, latency_ms) VALUES (?1, ?2, ?3, ?4)",
+                    params![key, now, status, latency_ms],
+                )
+                .unwrap();
+            }
+            state.resolved_ips.lock().unwrap().insert(svc.label.clone(), resolved_ip);
         }
 
         // Purge old records
@@ -609,7 +618,7 @@ fn fmt_ms(v: Option<f64>) -> String {
 }
 
 fn fmt_latency(v: Option<f64>) -> String {
-    v.map_or("--".into(), |v| format!("{v:.0}ms"))
+    v.map_or_else(String::new, |v| format!("{v:.0}ms"))
 }
 
 
@@ -722,8 +731,8 @@ fn get_icon_svg(key: &str) -> &'static str {
     match key {
         "google" => include_str!("icons/google.svg"),
         "bing" => include_str!("icons/bing.svg"),
-        "heanet" => include_str!("icons/heanet.svg"),
-        "digiweb" => include_str!("icons/digiweb.svg"),
+        "heanet" => include_str!("icons/heanet.html"),
+        "digiweb" => include_str!("icons/digiweb.html"),
         "digiweb-dns" => include_str!("icons/digiweb-dns.svg"),
         "dkit" => include_str!("icons/dkit.svg"),
         "youtube" => include_str!("icons/youtube.html"),
@@ -802,6 +811,7 @@ fn render_host(db: &Connection, host: &Host, user_open: Option<bool>) -> String 
 
     let mut detail_rows = String::new();
     for (ts, status, latency) in &rows[..rows.len().min(20)] {
+        let time = if ts.len() >= 23 { &ts[11..23] } else { ts.as_str() };
         let latency_str = latency.map_or(String::new(), |v| format!("{v:.1}ms"));
         let (dot_class, dot_char) = match status.as_str() {
             "UP"   => ("status-up",   "✓"),
@@ -809,10 +819,10 @@ fn render_host(db: &Connection, host: &Host, user_open: Option<bool>) -> String 
             _      => ("",            "–"),
         };
         detail_rows.push_str(&format!(
-            r#"<div class="pg-row"><span>{ts}</span><span>{latency_str}</span><span class="{dot_class}">{dot_char}</span></div>"#
+            r#"<div class="pg-row"><span>{time}</span><span>{latency_str}</span><span class="{dot_class}">{dot_char}</span></div>"#
         ));
     }
-    let stats_section = render_stats_section(&w5m, &w1h, &w24h, &w7d, "Last 20 pings", "Timestamp", &detail_rows);
+    let stats_section = render_stats_section(&w5m, &w1h, &w24h, &w7d, "Last 20 pings", "Time", &detail_rows);
 
     format!(
         include_str!("templates/host.html"),
@@ -824,7 +834,7 @@ fn render_host(db: &Connection, host: &Host, user_open: Option<bool>) -> String 
     )
 }
 
-fn render_service_item(db: &Connection, svc: &Service, id: &str, user_open: Option<bool>) -> String {
+fn render_service_item(db: &Connection, svc: &Service, id: &str, user_open: Option<bool>, resolved_ip: Option<&str>) -> String {
     let key = format!("svc:{}", svc.label);
     let (cur_status, latency) = query_latest_status(db, &key);
     let (dot_class, dot_char) = match cur_status.as_str() {
@@ -852,7 +862,7 @@ fn render_service_item(db: &Connection, svc: &Service, id: &str, user_open: Opti
     let mut detail_rows = String::new();
     for (ts, s, lat) in &recent[..recent.len().min(10)] {
         let lat_str = lat.map_or(String::new(), |v| format!("{v:.1}ms"));
-        let time = if ts.len() > 11 { &ts[11..19] } else { ts };
+        let time = if ts.len() >= 23 { &ts[11..23] } else { ts.as_str() };
         let (dot_class, dot_char) = match s.as_str() {
             "UP"   => ("status-up",   "✓"),
             "DOWN" => ("status-down", "✗"),
@@ -863,6 +873,10 @@ fn render_service_item(db: &Connection, svc: &Service, id: &str, user_open: Opti
         ));
     }
     let stats_section = render_stats_section(&w5m, &w1h, &w24h, &w7d, "Last 10 checks", "Time", &detail_rows);
+    let resolved_ip_html = match resolved_ip {
+        Some(ip) => format!(r#" · <span class="ip">{ip}</span>"#),
+        None => String::new(),
+    };
 
     format!(
         include_str!("templates/service_item.html"),
@@ -878,11 +892,12 @@ fn render_service_item(db: &Connection, svc: &Service, id: &str, user_open: Opti
         uptime_badge = uptime_badge,
         check = svc.check,
         target = svc.target,
+        resolved_ip_html = resolved_ip_html,
         stats_section = stats_section,
     )
 }
 
-fn render_service_card(db: &Connection, title: &str, svcs: &[&Service], start_idx: usize, open: bool, open_svc_items: Option<&HashSet<String>>) -> String {
+fn render_service_card(db: &Connection, title: &str, svcs: &[&Service], start_idx: usize, open: bool, open_svc_items: Option<&HashSet<String>>, resolved_ips: &HashMap<String, Option<String>>) -> String {
     if svcs.is_empty() {
         return String::new();
     }
@@ -926,13 +941,14 @@ fn render_service_card(db: &Connection, title: &str, svcs: &[&Service], start_id
     for (i, svc) in svcs.iter().enumerate() {
         let id = format!("svc-{}", start_idx + i);
         let item_open = open_svc_items.map(|set| set.contains(&id));
-        html.push_str(&render_service_item(db, svc, &id, item_open));
+        let resolved_ip = resolved_ips.get(&svc.label).and_then(|o| o.as_deref());
+        html.push_str(&render_service_item(db, svc, &id, item_open, resolved_ip));
     }
     html.push_str("</div></details>");
     html
 }
 
-fn render_services(db: &Connection, services: &[Service], ui: &UiCookie) -> String {
+fn render_services(db: &Connection, services: &[Service], ui: &UiCookie, resolved_ips: &HashMap<String, Option<String>>) -> String {
     if services.is_empty() {
         return String::new();
     }
@@ -952,17 +968,18 @@ fn render_services(db: &Connection, services: &[Service], ui: &UiCookie) -> Stri
     };
 
     let open_items = ui.open_svc_items.as_ref();
-    let mut html = render_service_card(db, "Web", &web, 0, svc_open("Web"), open_items);
-    html.push_str(&render_service_card(db, "ICMP", &icmp, web.len(), svc_open("ICMP"), open_items));
-    html.push_str(&render_service_card(db, "DNS", &dns, web.len() + icmp.len(), svc_open("DNS"), open_items));
+    let mut html = render_service_card(db, "Web", &web, 0, svc_open("Web"), open_items, resolved_ips);
+    html.push_str(&render_service_card(db, "ICMP", &icmp, web.len(), svc_open("ICMP"), open_items, resolved_ips));
+    html.push_str(&render_service_card(db, "DNS", &dns, web.len() + icmp.len(), svc_open("DNS"), open_items, resolved_ips));
     html
 }
 
 async fn handler(State(state): State<Arc<AppState>>, headers: axum::http::HeaderMap) -> Html<String> {
     let ui = parse_ui_cookie(&headers);
     let db = state.db.lock().unwrap();
+    let resolved_ips = state.resolved_ips.lock().unwrap().clone();
 
-    let services_html = render_services(&db, &state.config.services, &ui);
+    let services_html = render_services(&db, &state.config.services, &ui, &resolved_ips);
     let name = &state.config.name;
 
     let mut html = format!(
