@@ -1,0 +1,283 @@
+name: Build
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+
+jobs:
+  build:
+    name: Build (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Pi Zero (ARMv6)
+            target: arm-unknown-linux-musleabihf
+            tc: arm-linux-musleabihf-cross
+            pfx: arm-linux-musleabihf
+            cflags: "-march=armv6 -mfpu=vfp -mfloat-abi=hard"
+            arch: armv6
+            apt: ""
+            nightly: false
+
+          - name: Pi 64-bit (AArch64)
+            target: aarch64-unknown-linux-musl
+            tc: aarch64-linux-musl-cross
+            pfx: aarch64-linux-musl
+            cflags: ""
+            arch: aarch64
+            apt: ""
+            nightly: false
+
+          - name: OpenWRT / MT76x8 (MIPS LE)
+            target: mipsel-unknown-linux-musl
+            tc: mipsel-linux-muslsf-cross
+            pfx: mipsel-linux-muslsf
+            cflags: "-march=mips32r2 -msoft-float"
+            arch: mipsel
+            apt: ""
+            nightly: true
+
+          - name: x86_64 Linux
+            target: x86_64-unknown-linux-musl
+            tc: ""
+            pfx: ""
+            cflags: ""
+            arch: x86_64
+            apt: "musl-tools"
+            nightly: false
+
+          - name: Windows x64
+            target: x86_64-pc-windows-gnu
+            tc: ""
+            pfx: ""
+            cflags: ""
+            arch: windows-x64
+            apt: "gcc-mingw-w64-x86-64 binutils-mingw-w64-x86-64"
+            nightly: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Build CSS tokens
+        run: cd web && npm ci && npm run build
+
+      - name: Cache musl.cc toolchain
+        if: matrix.tc != ''
+        uses: actions/cache@v4
+        id: tc-cache
+        with:
+          path: ~/.local/${{ matrix.tc }}
+          key: tc-${{ matrix.tc }}-v1
+
+      - name: Download musl.cc toolchain
+        if: matrix.tc != '' && steps.tc-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/.local
+          curl -fL "https://musl.cc/${{ matrix.tc }}.tgz" | tar -xz -C ~/.local
+
+      - name: Install apt packages
+        if: matrix.apt != ''
+        run: sudo apt-get install -y ${{ matrix.apt }}
+
+      - name: Install Rust (stable)
+        if: "!matrix.nightly"
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install Rust (nightly + rust-src)
+        if: matrix.nightly
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rust-src
+
+      - name: Cache Cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-${{ matrix.target }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: cargo-${{ matrix.target }}-
+
+      - name: Configure build environment
+        shell: bash
+        run: |
+          TARGET="${{ matrix.target }}"
+          TC_ROOT="$HOME/.local/${{ matrix.tc }}"
+          PFX="${{ matrix.pfx }}"
+          CFLAGS="${{ matrix.cflags }}"
+
+          # Normalise target name for env var keys (hyphens → underscores, uppercase)
+          TARGET_ENV="${TARGET//-/_}"
+          TARGET_UPPER="${TARGET_ENV^^}"
+
+          if [ -n "$PFX" ]; then
+            # musl.cc cross-compiler: override .cargo/config.toml linker (which
+            # has a hardcoded /home/david/ path) and set CC/AR/CFLAGS.
+            echo "CARGO_TARGET_${TARGET_UPPER}_LINKER=$TC_ROOT/bin/$PFX-gcc" >> "$GITHUB_ENV"
+            echo "CC_${TARGET_ENV}=$TC_ROOT/bin/$PFX-gcc"                    >> "$GITHUB_ENV"
+            echo "AR_${TARGET_ENV}=$TC_ROOT/bin/$PFX-ar"                     >> "$GITHUB_ENV"
+            if [ -n "$CFLAGS" ]; then
+              echo "CFLAGS_${TARGET_ENV}=$CFLAGS"                            >> "$GITHUB_ENV"
+            fi
+          fi
+
+          if [ "$TARGET" = "mipsel-unknown-linux-musl" ]; then
+            # mips-ld-wrapper.sh reads MIPS_TC_ROOT; also override config.toml
+            # linker (hardcoded path) with the workspace-relative wrapper.
+            echo "MIPS_TC_ROOT=$TC_ROOT"                                     >> "$GITHUB_ENV"
+            echo "CARGO_TARGET_MIPSEL_UNKNOWN_LINUX_MUSL_LINKER=$GITHUB_WORKSPACE/mips-ld-wrapper.sh" >> "$GITHUB_ENV"
+          fi
+
+          if [ "$TARGET" = "x86_64-unknown-linux-musl" ]; then
+            echo "CC=musl-gcc" >> "$GITHUB_ENV"
+          fi
+
+      - name: Build (stable)
+        if: "!matrix.nightly"
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Build (nightly + build-std)
+        if: matrix.nightly
+        run: cargo +nightly build -Z build-std=std,panic_abort --release --target ${{ matrix.target }}
+
+      - name: Determine version
+        id: version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "ver=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          else
+            echo "ver=${GITHUB_SHA::8}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Strip and stage binaries
+        shell: bash
+        run: |
+          TARGET="${{ matrix.target }}"
+          ARCH="${{ matrix.arch }}"
+          VER="${{ steps.version.outputs.ver }}"
+
+          BIN="target/$TARGET/release/pi-glass"
+          MAILER="target/$TARGET/release/pi-glass-mailer"
+          EXT=""
+
+          if [ "$ARCH" = "windows-x64" ]; then
+            BIN="$BIN.exe"
+            MAILER="$MAILER.exe"
+            EXT=".exe"
+            STRIP="x86_64-w64-mingw32-strip"
+          elif [ -n "${{ matrix.pfx }}" ]; then
+            STRIP="$HOME/.local/${{ matrix.tc }}/bin/${{ matrix.pfx }}-strip"
+          else
+            STRIP="strip"
+          fi
+
+          $STRIP "$BIN"
+          $STRIP "$MAILER" 2>/dev/null || true   # MIPS mailer may not build
+
+          echo "BIN=$BIN"         >> "$GITHUB_ENV"
+          echo "MAILER=$MAILER"   >> "$GITHUB_ENV"
+          echo "EXT=$EXT"         >> "$GITHUB_ENV"
+          echo "VER=$VER"         >> "$GITHUB_ENV"
+          echo "ARCH=$ARCH"       >> "$GITHUB_ENV"
+
+      - name: Package Linux/systemd bundle
+        if: matrix.arch != 'windows-x64'
+        shell: bash
+        run: |
+          STAGE="bundle-linux"
+          mkdir -p "$STAGE"
+          cp "$BIN"                                "$STAGE/pi-glass"
+          [ -f "$MAILER" ] && cp "$MAILER"         "$STAGE/pi-glass-mailer" || true
+          cp deploy/config.toml                    "$STAGE/config.toml"
+          cp deploy/pi-glass.service               "$STAGE/pi-glass.service"
+          cp deploy/pi-glass-mailer.service        "$STAGE/pi-glass-mailer.service"
+          tar -czf "pi-glass-${VER}-${ARCH}-linux.tar.gz" -C "$STAGE" .
+
+      - name: Package OpenWRT overlay bundle
+        if: matrix.arch != 'windows-x64'
+        shell: bash
+        run: |
+          STAGE="bundle-openwrt"
+          mkdir -p "$STAGE/usr/bin"
+          mkdir -p "$STAGE/etc/pi-glass"
+          mkdir -p "$STAGE/etc/init.d"
+          mkdir -p "$STAGE/opt"
+          cp "$BIN"                                "$STAGE/usr/bin/pi-glass"
+          chmod 755                                "$STAGE/usr/bin/pi-glass"
+          cp deploy/config-openwrt.toml            "$STAGE/etc/pi-glass/config.toml"
+          cp deploy/pi-glass.init                  "$STAGE/etc/init.d/pi-glass"
+          chmod 755                                "$STAGE/etc/init.d/pi-glass"
+          ln -s /tmp/pi-glass                      "$STAGE/opt/pi-glass"
+          cat > "$STAGE/INSTALL.md" <<'EOF'
+          # pi-glass — OpenWRT installation
+
+          ## Extract (as root on the device)
+
+              scp pi-glass-*-openwrt.tar.gz root@<router>:/tmp/
+              ssh root@<router> "tar -xzf /tmp/pi-glass-*-openwrt.tar.gz -C / && \
+                                 chmod +x /etc/init.d/pi-glass"
+
+          ## Enable and start
+
+              ssh root@<router> "/etc/init.d/pi-glass enable && /etc/init.d/pi-glass start"
+
+          ## Notes
+
+          - **Database**: `/tmp/pi-glass/pi-glass.db` — tmpfs, ephemeral, cleared on
+            every reboot. NOR flash is not written to.
+          - To persist history across reboots, mount a USB drive and set `db_path` in
+            `/etc/pi-glass/config.toml`.
+          - **Config**: `/etc/pi-glass/config.toml` — survives reboots (overlayfs).
+          - **Dashboard**: `http://<router-ip>:8080`
+          EOF
+          tar -czf "pi-glass-${VER}-${ARCH}-openwrt.tar.gz" -C "$STAGE" .
+
+      - name: Package Windows bundle
+        if: matrix.arch == 'windows-x64'
+        shell: bash
+        run: |
+          mkdir -p bundle-windows
+          cp "$BIN"                                "bundle-windows/pi-glass.exe"
+          [ -f "$MAILER" ] && cp "$MAILER"         "bundle-windows/pi-glass-mailer.exe" || true
+          cp deploy/config.toml                    "bundle-windows/config.toml"
+          cd bundle-windows
+          zip "../pi-glass-${VER}-windows-x64.zip" ./*
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: bundles-${{ matrix.arch }}
+          path: "pi-glass-*.*"
+          retention-days: 14
+
+  release:
+    name: Publish release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist/
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true

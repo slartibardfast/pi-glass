@@ -2,8 +2,9 @@
 # Linker wrapper for mipsel-unknown-linux-musl cross-compilation.
 # Rust passes CRT files as bare names (crt1.o etc); ld can't find them
 # without full paths. This wrapper substitutes them before invoking gcc.
-MUSL_LIB=/home/david/.local/mipsel-linux-muslsf-cross/mipsel-linux-muslsf/lib
-GCC_LIB=/home/david/.local/mipsel-linux-muslsf-cross/lib/gcc/mipsel-linux-muslsf/11.2.1
+MIPS_TC_ROOT="${MIPS_TC_ROOT:-$HOME/.local/mipsel-linux-muslsf-cross}"
+MUSL_LIB="$MIPS_TC_ROOT/mipsel-linux-muslsf/lib"
+GCC_LIB="$MIPS_TC_ROOT/lib/gcc/mipsel-linux-muslsf/11.2.1"
 
 args=("-L$GCC_LIB" "-msoft-float")
 for arg in "$@"; do
@@ -15,4 +16,4 @@ for arg in "$@"; do
   esac
 done
 
-exec /home/david/.local/mipsel-linux-muslsf-cross/bin/mipsel-linux-muslsf-gcc "${args[@]}"
+exec "$MIPS_TC_ROOT/bin/mipsel-linux-muslsf-gcc" "${args[@]}"

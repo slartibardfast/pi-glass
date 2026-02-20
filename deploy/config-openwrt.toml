@@ -1,0 +1,55 @@
+name = "pi-glass"
+listen = "0.0.0.0:8080"
+# Database lives in /tmp (tmpfs) — ephemeral, cleared on every reboot.
+# This is intentional: NOR flash wear is avoided and history does not persist.
+# To persist across reboots, mount a USB drive and set db_path accordingly.
+db_path = "/tmp/pi-glass/pi-glass.db"
+poll_interval_secs = 30
+ping_timeout_secs = 2
+retention_days = 7
+
+[[hosts]]
+addr = "192.168.1.1"
+label = "Gateway"
+
+# External service checks
+# icon: google, bing, cloudflare, quad9, dns, youtube, outlook, whatsapp,
+#       digiweb, heanet, dkit  (omit for globe fallback)
+# icon_data: optional base64 data URI override (e.g. "data:image/png;base64,...")
+# check: "ping" (ICMP), "tcp" (TCP connect), "dns" (UDP query)
+
+[[services]]
+label = "Google"
+icon = "google"
+check = "ping"
+target = "google.com"
+
+[[services]]
+label = "Cloudflare"
+icon = "cloudflare"
+check = "tcp"
+target = "cloudflare.com:443"
+
+[[services]]
+label = "YouTube"
+icon = "youtube"
+check = "tcp"
+target = "youtube.com:443"
+
+[[services]]
+label = "Cloudflare DNS"
+icon = "cloudflare"
+check = "dns"
+target = "1.1.1.1"
+
+[[services]]
+label = "Google DNS"
+icon = "google"
+check = "dns"
+target = "8.8.8.8"
+
+[[services]]
+label = "Quad9 DNS"
+icon = "quad9"
+check = "dns"
+target = "9.9.9.9"
