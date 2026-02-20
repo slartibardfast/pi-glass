@@ -4,4 +4,5 @@ set -e
 . ./build-pi.env
 cargo build --release
 $STRIP $EXEC
+$STRIP $MAILER_EXEC
 echo "Built: $EXEC ($(du -sh $EXEC | cut -f1))"

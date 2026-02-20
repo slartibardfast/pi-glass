@@ -1,0 +1,14 @@
+[Unit]
+Description=pi-glass Daily Email Report
+After=network-online.target pi-glass.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/opt/pi-glass/pi-glass-mailer
+WorkingDirectory=/opt/pi-glass
+Restart=always
+RestartSec=60
+
+[Install]
+WantedBy=multi-user.target

@@ -1,7 +1,15 @@
 [package]
 name = "pi-glass"
-version = "0.7.0"
+version = "0.8.0"
 edition = "2021"
+
+[[bin]]
+name = "pi-glass"
+path = "src/main.rs"
+
+[[bin]]
+name = "pi-glass-mailer"
+path = "src/bin/mailer.rs"
 
 [dependencies]
 tokio = { version = "1", features = ["full"] }
@@ -11,3 +19,4 @@ surge-ping = "0.8"
 chrono = "0.4"
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "multipart"] }

@@ -5,4 +5,5 @@ set -e
 . ./build-win64.env
 cargo build --release
 $STRIP $EXEC
+$STRIP $MAILER_EXEC
 echo "Built: $EXEC ($(du -sh $EXEC | cut -f1))"
