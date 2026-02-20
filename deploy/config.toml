@@ -4,6 +4,7 @@ db_path = "/opt/pi-glass/pi-glass.db"
 poll_interval_secs = 30
 ping_timeout_secs = 2
 retention_days = 7
+# wal_mode = true   # enable only on filesystems that support shared memory
 
 [[hosts]]
 addr = "192.168.1.1"

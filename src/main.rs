@@ -56,9 +56,13 @@ async fn main() {
     let conn = Connection::open(&config.db_path)
         .unwrap_or_else(|e| panic!("Failed to open database at {}: {e}", config.db_path));
 
+    if config.wal_mode {
+        conn.execute_batch("PRAGMA journal_mode=WAL;")
+            .expect("Failed to enable WAL mode");
+    }
+
     conn.execute_batch(
-        "PRAGMA journal_mode=WAL;
-         CREATE TABLE IF NOT EXISTS ping_results (
+        "CREATE TABLE IF NOT EXISTS ping_results (
             id         INTEGER PRIMARY KEY,
             host       TEXT NOT NULL,
             timestamp  TEXT NOT NULL,

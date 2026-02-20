@@ -95,6 +95,8 @@ pub struct Config {
     pub ping_timeout_secs: u64,
     #[serde(default = "default_retention_days")]
     pub retention_days: i64,
+    #[serde(default)]
+    pub wal_mode: bool,
     #[serde(default = "default_hosts")]
     pub hosts: Vec<Host>,
     #[serde(default = "default_services")]
@@ -140,6 +142,7 @@ impl Default for Config {
             poll_interval_secs: default_poll_interval(),
             ping_timeout_secs: default_ping_timeout(),
             retention_days: default_retention_days(),
+            wal_mode: false,
             hosts: default_hosts(),
             services: default_services(),
             mailer: None,
@@ -240,6 +243,10 @@ ping_timeout_secs = 2
 
 # Days of history to retain in the database
 retention_days = 7
+
+# Enable WAL journal mode for concurrent read/write access (default: false)
+# Requires filesystem support for shared memory — not supported on all Pi mounts.
+# wal_mode = true
 
 # ── LAN Hosts ────────────────────────────────────────────────────
 # Monitored by ICMP ping. Each host gets a collapsible stats card.
