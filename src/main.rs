@@ -120,6 +120,8 @@ const APP_CSS: &str = include_str!("app.css");
 
 const INLINE_JS: &str = include_str!("app.js");
 
+const SPARKS_WOFF2: &[u8] = include_bytes!("fonts/Sparks-Bar-Medium.woff2");
+
 // Minimal DNS A-query for google.com
 const DNS_QUERY: [u8; 28] = [
     0xAB, 0xCD, // ID
@@ -340,6 +342,16 @@ struct AppState {
     config_toml: Option<String>,
 }
 
+async fn serve_font() -> impl axum::response::IntoResponse {
+    (
+        [
+            (axum::http::header::CONTENT_TYPE, "font/woff2"),
+            (axum::http::header::CACHE_CONTROL, "public, max-age=31536000, immutable"),
+        ],
+        SPARKS_WOFF2,
+    )
+}
+
 #[tokio::main]
 async fn main() {
     #[cfg(target_os = "windows")]
@@ -376,6 +388,7 @@ async fn main() {
 
     let app = axum::Router::new()
         .route("/", axum::routing::get(handler))
+        .route("/font/sparks.woff2", axum::routing::get(serve_font))
         .with_state(state.clone());
 
     let listener = tokio::net::TcpListener::bind(&state.config.listen)
@@ -599,16 +612,66 @@ fn fmt_latency(v: Option<f64>) -> String {
     v.map_or("--".into(), |v| format!("{v:.0}ms"))
 }
 
-fn status_class(s: &str) -> &'static str {
-    if s == "UP" { "status-up" } else { "status-down" }
-}
 
-fn fmt_avg_stddev(avg: Option<f64>, stddev: Option<f64>) -> String {
-    match (avg, stddev) {
-        (Some(a), Some(sd)) => format!(r#"<span class="svc-avg-latency">[{a:.0}ms ±{sd:.0}]</span>"#),
-        (Some(a), None)     => format!(r#"<span class="svc-avg-latency">[{a:.0}ms]</span>"#),
-        _                   => String::new(),
+fn fmt_sparkline(checks: &[(String, String, Option<f64>)]) -> String {
+    const SPARK_BARS: usize = 40;
+
+    // checks arrive DESC (newest first); reverse for left→right chronological display
+    let ordered: Vec<_> = checks.iter().rev().collect();
+
+    // Transparent gap bars fill the left side so every sparkline is SPARK_BARS wide.
+    let pad_count = SPARK_BARS.saturating_sub(checks.len());
+    let pad_str = if pad_count > 0 {
+        let pads = vec!["50"; pad_count].join(",");
+        format!(r#"<span class="spark spark-pad">{{{pads}}}</span>"#)
+    } else {
+        String::new()
+    };
+
+    if checks.is_empty() {
+        return pad_str;
     }
+
+    let latencies: Vec<f64> = ordered.iter()
+        .filter_map(|(_, s, l)| if s == "UP" { *l } else { None })
+        .collect();
+
+    let (values, title): (Vec<String>, String) = if latencies.is_empty() {
+        // All DOWN — floor bars, no latency stats
+        (ordered.iter().map(|_| "0".to_string()).collect(),
+         format!("{} checks · all down", checks.len()))
+    } else {
+        let count = latencies.len() as f64;
+        let avg = latencies.iter().sum::<f64>() / count;
+        let stddev = if count > 1.0 {
+            let var = latencies.iter().map(|v| (v - avg).powi(2)).sum::<f64>() / (count - 1.0);
+            var.sqrt()
+        } else { 0.0 };
+        let min = latencies.iter().cloned().fold(f64::INFINITY, f64::min);
+        let max = latencies.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let range = max - min;
+
+        let vals = ordered.iter().map(|(_, status, latency)| {
+            if status == "UP" {
+                let norm = if range < 0.5 {
+                    50u32  // flat mid-line for very consistent latency
+                } else {
+                    let v = latency.unwrap_or(min);
+                    (1.0 + (v - min) / range * 99.0).round() as u32
+                };
+                norm.to_string()
+            } else {
+                "0".to_string()  // DOWN → floor bar
+            }
+        }).collect();
+        let t = format!(
+            "{} checks · avg {avg:.0}ms ±{stddev:.0} · min {min:.0}ms · max {max:.0}ms",
+            checks.len()
+        );
+        (vals, t)
+    };
+
+    format!(r#"{pad_str}<span class="spark" title="{title}">{{{}}}</span>"#, values.join(","))
 }
 
 fn tier_class(uptime_pct: Option<f64>) -> &'static str {
@@ -627,24 +690,6 @@ fn state_tier(status: &str) -> &'static str {
         "DOWN" => "tier-down",
         _      => "tier-neutral",
     }
-}
-
-fn query_avg_stddev(db: &Connection, host: &str, minutes: i64) -> (Option<f64>, Option<f64>) {
-    let cutoff = (Local::now() - chrono::Duration::minutes(minutes)).to_rfc3339();
-    db.query_row(
-        "SELECT AVG(latency_ms), AVG(latency_ms * latency_ms)
-         FROM ping_results WHERE host = ?1 AND timestamp > ?2 AND status = 'UP'",
-        params![host, cutoff],
-        |row| {
-            let avg: Option<f64> = row.get(0)?;
-            let avg_sq: Option<f64> = row.get(1)?;
-            let stddev = match (avg, avg_sq) {
-                (Some(a), Some(sq)) => Some((sq - a * a).max(0.0).sqrt()),
-                _ => None,
-            };
-            Ok((avg, stddev))
-        },
-    ).unwrap_or((None, None))
 }
 
 fn query_card_uptime(db: &Connection, keys: &[String], minutes: i64) -> Option<f64> {
@@ -736,10 +781,15 @@ fn render_host(db: &Connection, host: &Host, user_open: Option<bool>) -> String 
     let (cur_status, latency) = query_latest_status(db, &host.addr);
     let tier = state_tier(&cur_status);
     let latency_str = latency.map_or_else(String::new, |ms| format!("{ms:.0}ms"));
-    let (h_avg_ms, h_stddev_ms) = query_avg_stddev(db, &host.addr, 60);
-    let avg_stddev_str = fmt_avg_stddev(h_avg_ms, h_stddev_ms);
+    let rows = query_recent_checks(db, &host.addr, 40);
+    let spark_str = fmt_sparkline(&rows);
+    let (dot_class, dot_char) = match cur_status.as_str() {
+        "UP"   => ("up",      "✓"),
+        "DOWN" => ("down",    "✗"),
+        _      => ("unknown", "–"),
+    };
     let streak_display = format!(
-        r#"<span class="host-badge-group"><span class="svc-latency">{latency_str}{avg_stddev_str}</span><span class="streak {tier}">{}</span></span>"#,
+        r#"<span class="host-badge-group"><span class="svc-latency">{spark_str}{latency_str}</span><span class="streak {tier}">{}</span><span class="svc-status {dot_class}">{dot_char}</span></span>"#,
         fmt_pct(w1h.uptime_pct)
     );
 
@@ -750,13 +800,16 @@ fn render_host(db: &Connection, host: &Host, user_open: Option<bool>) -> String 
         None        => if all_up_1h { "" } else { " open" },
     };
 
-    let rows = query_recent_checks(db, &host.addr, 20);
     let mut detail_rows = String::new();
-    for (ts, status, latency) in &rows {
-        let latency_str = fmt_ms(*latency);
-        let class = status_class(status);
+    for (ts, status, latency) in &rows[..rows.len().min(20)] {
+        let latency_str = latency.map_or(String::new(), |v| format!("{v:.1}ms"));
+        let (dot_class, dot_char) = match status.as_str() {
+            "UP"   => ("status-up",   "✓"),
+            "DOWN" => ("status-down", "✗"),
+            _      => ("",            "–"),
+        };
         detail_rows.push_str(&format!(
-            r#"<tr><td>{ts}</td><td></td><td></td><td class="{class}">{status}</td><td>{latency_str}</td></tr>"#
+            r#"<div class="pg-row"><span>{ts}</span><span>{latency_str}</span><span class="{dot_class}">{dot_char}</span></div>"#
         ));
     }
     let stats_section = render_stats_section(&w5m, &w1h, &w24h, &w7d, "Last 20 pings", "Timestamp", &detail_rows);
@@ -786,8 +839,6 @@ fn render_service_item(db: &Connection, svc: &Service, id: &str, user_open: Opti
     };
     let latency_str = fmt_latency(latency);
 
-    let (avg_ms, stddev_ms) = query_avg_stddev(db, &key, 60);
-    let avg_stddev_str = fmt_avg_stddev(avg_ms, stddev_ms);
     let w5m  = query_window_stats(db, &key, 5);
     let w1h  = query_window_stats(db, &key, 60);
     let w24h = query_window_stats(db, &key, 1440);
@@ -796,14 +847,19 @@ fn render_service_item(db: &Connection, svc: &Service, id: &str, user_open: Opti
     let uptime_badge = fmt_pct(w1h.uptime_pct);
     let open_attr = if user_open.unwrap_or(false) { " open" } else { "" };
 
-    let recent = query_recent_checks(db, &key, 10);
+    let recent = query_recent_checks(db, &key, 40);
+    let spark_str = fmt_sparkline(&recent);
     let mut detail_rows = String::new();
-    for (ts, s, lat) in &recent {
-        let cls = status_class(s);
-        let lat_str = fmt_ms(*lat);
+    for (ts, s, lat) in &recent[..recent.len().min(10)] {
+        let lat_str = lat.map_or(String::new(), |v| format!("{v:.1}ms"));
         let time = if ts.len() > 11 { &ts[11..19] } else { ts };
+        let (dot_class, dot_char) = match s.as_str() {
+            "UP"   => ("status-up",   "✓"),
+            "DOWN" => ("status-down", "✗"),
+            _      => ("",            "–"),
+        };
         detail_rows.push_str(&format!(
-            r#"<tr><td>{time}</td><td></td><td></td><td class="{cls}">{s}</td><td>{lat_str}</td></tr>"#
+            r#"<div class="pg-row"><span>{time}</span><span>{lat_str}</span><span class="{dot_class}">{dot_char}</span></div>"#
         ));
     }
     let stats_section = render_stats_section(&w5m, &w1h, &w24h, &w7d, "Last 10 checks", "Time", &detail_rows);
@@ -817,7 +873,7 @@ fn render_service_item(db: &Connection, svc: &Service, id: &str, user_open: Opti
         dot_char = dot_char,
         label = svc.label,
         latency_str = latency_str,
-        avg_stddev_str = avg_stddev_str,
+        spark_str = spark_str,
         tier = tier,
         uptime_badge = uptime_badge,
         check = svc.check,
@@ -831,11 +887,12 @@ fn render_service_card(db: &Connection, title: &str, svcs: &[&Service], start_id
         return String::new();
     }
 
-    let up_count = svcs.iter().filter(|s| {
-        let key = format!("svc:{}", s.label);
+    let mut up_count = 0usize;
+    for svc in svcs {
+        let key = format!("svc:{}", svc.label);
         let (status, _) = query_latest_status(db, &key);
-        status == "UP"
-    }).count();
+        if status == "UP" { up_count += 1; }
+    }
     let total = svcs.len();
     let keys: Vec<String> = svcs.iter().map(|s| format!("svc:{}", s.label)).collect();
     let card_uptime = query_card_uptime(db, &keys, 60);
@@ -844,14 +901,27 @@ fn render_service_card(db: &Connection, title: &str, svcs: &[&Service], start_id
         Some(_) => format!("1h uptime: {}", fmt_pct(card_uptime)),
         None    => "No data".to_string(),
     };
-    let summary_text = format!(r#"<span class="{tier}" title="{title_attr}">{up_count}/{total}</span>"#);
+    let (card_dot_class, card_dot_char) = if total == 0 {
+        ("unknown", "–")
+    } else if up_count == total {
+        ("up", "✓")
+    } else {
+        ("down", "✗")
+    };
+    let center_html = format!(
+        r#"<span class="svc-card-center"><span class="streak svc-card-count {tier}" title="{title_attr}">{up_count}/{total}</span></span>"#
+    );
+    let right_html = format!(
+        r#"<span class="svc-card-right svc-status {card_dot_class}">{card_dot_char}</span>"#
+    );
 
     let open_attr = if open { " open" } else { "" };
     let mut html = format!(
         include_str!("templates/service_card.html"),
-        title = title,
-        summary_text = summary_text,
-        open_attr = open_attr,
+        title      = title,
+        center_html = center_html,
+        right_html  = right_html,
+        open_attr  = open_attr,
     );
     for (i, svc) in svcs.iter().enumerate() {
         let id = format!("svc-{}", start_idx + i);
