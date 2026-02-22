@@ -6,6 +6,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use axum::body::Bytes;
 use axum::extract::State;
 use chrono::Local;
 use rusqlite::{params, Connection};
@@ -30,7 +31,7 @@ const DNS_QUERY: [u8; 28] = [
 
 struct PageCache {
     generation: usize,
-    entries: HashMap<u64, String>,
+    entries: HashMap<u64, Bytes>,
 }
 
 fn content_hash(data: &str) -> String {
@@ -46,6 +47,7 @@ struct AppState {
     resolved_ips: Mutex<HashMap<String, Option<String>>>,
     poll_generation: AtomicUsize,
     page_cache: Mutex<PageCache>,
+    effective_refresh_secs: AtomicUsize,
     css_hash: String,
     js_hash: String,
 }
@@ -159,6 +161,7 @@ async fn main() {
     let css_hash = content_hash(&format!("{TOKENS_CSS}\n{APP_CSS}"));
     let js_hash = content_hash(INLINE_JS);
 
+    let effective_refresh = config.poll_interval_secs as usize;
     let state = Arc::new(AppState {
         db: Mutex::new(conn),
         config,
@@ -166,10 +169,12 @@ async fn main() {
         resolved_ips: Mutex::new(HashMap::new()),
         poll_generation: AtomicUsize::new(0),
         page_cache: Mutex::new(PageCache { generation: 0, entries: HashMap::new() }),
+        effective_refresh_secs: AtomicUsize::new(effective_refresh),
         css_hash,
         js_hash,
     });
 
+    pre_render_startup(&state);
     tokio::spawn(poll_loop(state.clone()));
 
     let css_route = format!("/static/{}.css", state.css_hash);
@@ -337,9 +342,91 @@ async fn poll_loop(state: Arc<AppState>) {
         )
         .unwrap();
 
-        state.poll_generation.fetch_add(1, Ordering::Release);
+        pre_render_and_advance(&state);
         seq = seq.wrapping_add(1);
     }
+}
+
+// --- Page rendering ---
+
+fn render_page(state: &AppState, ui: &UiCookie, refresh_secs: u64) -> String {
+    let db = state.db.lock().unwrap();
+    let resolved_ips = state.resolved_ips.lock().unwrap().clone();
+
+    let services_html = render_services(&db, &state.config.services, ui, &resolved_ips);
+    let name = &state.config.name;
+
+    let style_head = format!(
+        r#"<link rel="stylesheet" href="/static/{}.css">"#,
+        state.css_hash,
+    );
+    let mut html = format!(
+        include_str!("templates/page.html"),
+        name = name,
+        refresh_secs = refresh_secs,
+        style_head = style_head,
+        services_html = services_html,
+    );
+
+    for host in &state.config.hosts {
+        let user_open = ui.open_hosts.as_ref().map(|set| set.contains(&host.addr));
+        html.push_str(&render_host(&db, host, user_open));
+    }
+
+    if let Some(ref toml) = state.config_toml {
+        html.push_str(r#"<details class="config-card" open><summary class="config-summary">config.toml — save this file to get started</summary><pre class="config-block">"#);
+        html.push_str(&html_escape(toml));
+        html.push_str("</pre></details>");
+    }
+
+    html.push_str(r##"<footer>Made with &#10084;&#65039; by <a href="mailto:david@connol.ly">David Connolly</a> &amp; <a href="https://claude.ai">Claude</a> &middot; <a href="https://github.com/slartibardfast/pi-glass">pi-glass</a></footer>"##);
+    html.push_str(&format!(r#"<script src="/static/{}.js"></script>"#, state.js_hash));
+    html.push_str("</body></html>");
+
+    html
+}
+
+fn pre_render_startup(state: &AppState) {
+    let html = render_page(state, &parse_ui_cookie(""), state.config.poll_interval_secs);
+    let mut hasher = DefaultHasher::new();
+    "".hash(&mut hasher);
+    let default_hash = hasher.finish();
+    let mut cache = state.page_cache.lock().unwrap();
+    cache.entries.insert(default_hash, Bytes::from(html));
+}
+
+fn pre_render_and_advance(state: &AppState) {
+    let start = Instant::now();
+    let mut html = render_page(state, &parse_ui_cookie(""), state.config.poll_interval_secs);
+    let render_secs = start.elapsed().as_secs();
+
+    let effective = if render_secs >= 1 {
+        state.config.poll_interval_secs.saturating_sub(render_secs).max(1)
+    } else {
+        state.config.poll_interval_secs
+    };
+    state.effective_refresh_secs.store(effective as usize, Ordering::Release);
+
+    if effective != state.config.poll_interval_secs {
+        html = html.replacen(
+            &format!(r#"content="{}""#, state.config.poll_interval_secs),
+            &format!(r#"content="{}""#, effective),
+            1,
+        );
+    }
+
+    let mut hasher = DefaultHasher::new();
+    "".hash(&mut hasher);
+    let default_hash = hasher.finish();
+
+    let mut cache = state.page_cache.lock().unwrap();
+    cache.generation += 1;
+    cache.entries.clear();
+    cache.entries.insert(default_hash, Bytes::from(html));
+    let new_gen = cache.generation;
+    drop(cache);
+
+    state.poll_generation.store(new_gen, Ordering::Release);
 }
 
 // --- HTTP handler ---
@@ -394,51 +481,17 @@ async fn handler(
         }
     }
 
-    // Cache miss — render fresh
-    let ui = parse_ui_cookie(cookie_str);
-    let db = state.db.lock().unwrap();
-    let resolved_ips = state.resolved_ips.lock().unwrap().clone();
+    // Cache miss — render fresh (cookie-specific view)
+    let refresh = state.effective_refresh_secs.load(Ordering::Acquire) as u64;
+    let html = render_page(&state, &parse_ui_cookie(cookie_str), refresh);
+    let body = Bytes::from(html);
 
-    let services_html = render_services(&db, &state.config.services, &ui, &resolved_ips);
-    let name = &state.config.name;
-
-    let style_head = format!(
-        r#"<link rel="stylesheet" href="/static/{}.css">"#,
-        state.css_hash,
-    );
-    let mut html = format!(
-        include_str!("templates/page.html"),
-        name = name,
-        refresh_secs = state.config.poll_interval_secs,
-        style_head = style_head,
-        services_html = services_html,
-    );
-
-    for host in &state.config.hosts {
-        let user_open = ui.open_hosts.as_ref().map(|set| set.contains(&host.addr));
-        html.push_str(&render_host(&db, host, user_open));
-    }
-
-    if let Some(ref toml) = state.config_toml {
-        html.push_str(r#"<details class="config-card" open><summary class="config-summary">config.toml — save this file to get started</summary><pre class="config-block">"#);
-        html.push_str(&html_escape(toml));
-        html.push_str("</pre></details>");
-    }
-
-    html.push_str(r##"<footer>Made with &#10084;&#65039; by <a href="mailto:david@connol.ly">David Connolly</a> &amp; <a href="https://claude.ai">Claude</a> &middot; <a href="https://github.com/slartibardfast/pi-glass">pi-glass</a></footer>"##);
-    html.push_str(&format!(r#"<script src="/static/{}.js"></script>"#, state.js_hash));
-    html.push_str("</body></html>");
-
-    drop(db);
-
-    // Store in cache
+    // Store in cache only if generation still matches
     {
         let mut cache = state.page_cache.lock().unwrap();
-        if cache.generation != generation {
-            cache.entries.clear();
-            cache.generation = generation;
+        if cache.generation == generation {
+            cache.entries.insert(cookie_hash, body.clone());
         }
-        cache.entries.insert(cookie_hash, html.clone());
     }
 
     (
@@ -447,6 +500,6 @@ async fn handler(
             (header::ETAG, etag),
             (header::CONTENT_TYPE, "text/html; charset=utf-8".to_string()),
         ],
-        html,
+        body,
     ).into_response()
 }
