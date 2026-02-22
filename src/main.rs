@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::net::IpAddr;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -27,7 +27,7 @@ const DNS_QUERY: [u8; 28] = [
 ];
 
 struct PageCache {
-    generation: u64,
+    generation: usize,
     entries: HashMap<u64, String>,
 }
 
@@ -36,7 +36,7 @@ struct AppState {
     config: Config,
     config_toml: Option<String>,
     resolved_ips: Mutex<HashMap<String, Option<String>>>,
-    poll_generation: AtomicU64,
+    poll_generation: AtomicUsize,
     page_cache: Mutex<PageCache>,
 }
 
@@ -101,7 +101,7 @@ async fn main() {
         config,
         config_toml,
         resolved_ips: Mutex::new(HashMap::new()),
-        poll_generation: AtomicU64::new(0),
+        poll_generation: AtomicUsize::new(0),
         page_cache: Mutex::new(PageCache { generation: 0, entries: HashMap::new() }),
     });
 
