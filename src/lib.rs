@@ -10,6 +10,7 @@ pub struct UiCookie {
     pub open_hosts: Option<HashSet<String>>,
     pub open_svc_cards: Option<HashSet<String>>,
     pub open_svc_items: Option<HashSet<String>>,
+    pub theme: Option<String>,  // None = auto, Some("dark") or Some("light")
 }
 
 pub fn parse_ui_cookie(cookie_str: &str) -> UiCookie {
@@ -19,12 +20,13 @@ pub fn parse_ui_cookie(cookie_str: &str) -> UiCookie {
         .unwrap_or("");
 
     if pg.is_empty() {
-        return UiCookie { open_hosts: None, open_svc_cards: None, open_svc_items: None };
+        return UiCookie { open_hosts: None, open_svc_cards: None, open_svc_items: None, theme: None };
     }
 
     let mut open_hosts = None;
     let mut open_svc_cards = None;
     let mut open_svc_items = None;
+    let mut theme = None;
 
     for field in pg.split('&') {
         if let Some(v) = field.strip_prefix("ho=") {
@@ -33,13 +35,17 @@ pub fn parse_ui_cookie(cookie_str: &str) -> UiCookie {
             open_svc_cards = Some(v.split('|').filter(|s| !s.is_empty()).map(String::from).collect());
         } else if let Some(v) = field.strip_prefix("si=") {
             open_svc_items = Some(v.split('|').filter(|s| !s.is_empty()).map(String::from).collect());
+        } else if let Some(v) = field.strip_prefix("th=") {
+            if v == "dark" || v == "light" { theme = Some(v.to_string()); }
         }
     }
 
-    UiCookie { open_hosts, open_svc_cards, open_svc_items }
+    UiCookie { open_hosts, open_svc_cards, open_svc_items, theme }
 }
 
 // --- Constants ---
+
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub const DEFAULT_LISTEN: &str = "0.0.0.0:8080";
 pub const DEFAULT_POLL_INTERVAL_SECS: u64 = 30;
@@ -834,6 +840,7 @@ pub fn render_full_page(db: &Connection, config: &Config) -> String {
         open_hosts: Some(config.hosts.iter().map(|h| h.addr.clone()).collect()),
         open_svc_cards: None,  // None = all open (no cookie state)
         open_svc_items: Some((0..n).map(|i| format!("svc-{i}")).collect()),
+        theme: None,
     };
     let empty_ips: HashMap<String, Option<String>> = HashMap::new();
     let services_html = render_services(db, &config.services, &all_open_ui, &empty_ips);
@@ -843,6 +850,7 @@ pub fn render_full_page(db: &Connection, config: &Config) -> String {
         include_str!("templates/page.html"),
         name              = config.name,
         refresh_secs      = config.poll_interval_secs,
+        theme_attr        = "",
         style_head        = style_head,
         services_html     = services_html,
         favicon_svg_route = "/favicon.svg",
@@ -854,7 +862,7 @@ pub fn render_full_page(db: &Connection, config: &Config) -> String {
         html.push_str(&render_host(db, host, Some(true)));
     }
 
-    html.push_str(r##"<footer>Made with &#10084;&#65039; by <a href="mailto:david@connol.ly">David Connolly</a> &amp; <a href="https://claude.ai">Claude</a> &middot; <a href="https://github.com/slartibardfast/pi-glass">pi-glass</a></footer>"##);
+    html.push_str(&format!(r##"<footer>Made with &#10084;&#65039; by <a href="mailto:david@connol.ly">David Connolly</a> &amp; <a href="https://claude.ai">Claude</a> &middot; <a href="https://github.com/slartibardfast/pi-glass">pi-glass v{VERSION}</a></footer>"##));
     html.push_str("</body></html>");
     html
 }

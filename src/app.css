@@ -18,11 +18,28 @@ body {
 .title-bar {
     margin-bottom: var(--spacingVerticalXXL);
 }
+.title-row {
+    display: flex;
+    align-items: center;
+    margin-bottom: var(--spacingVerticalM);
+}
 h1 {
     font-size: var(--fontSizeHero700);
-    margin-bottom: var(--spacingVerticalM);
     font-weight: var(--fontWeightSemibold);
+    flex: 1;
 }
+.theme-btn {
+    background: none;
+    border: 1px solid var(--colorNeutralStroke2);
+    border-radius: var(--borderRadiusMedium);
+    color: var(--colorNeutralForeground2);
+    cursor: pointer;
+    font-size: 1.1em;
+    line-height: 1;
+    padding: var(--spacingVerticalXS) var(--spacingHorizontalS);
+    flex-shrink: 0;
+}
+.theme-btn:hover { color: var(--colorNeutralForeground1); }
 .host-card {
     background: var(--colorNeutralCardBackground);
     border: 1px solid var(--colorNeutralStroke2);
@@ -267,9 +284,10 @@ footer a:hover { text-decoration: underline; }
     .spark, .spark-pad { display: none; }
 }
 
-/* Dark theme — overrides only the tokens actually used; all else inherits from tokens.css */
+/* Dark theme tokens — used by both auto and explicit dark rules below */
+/* Auto dark: OS prefers dark AND user hasn't forced light */
 @media (prefers-color-scheme: dark) {
-    :root {
+    :root:not([data-theme="light"]) {
         --colorNeutralBackground1:       #141414;
         --colorNeutralBackground3:       #212121;
         --colorNeutralCardBackground:    #1a1a1a;
@@ -282,4 +300,18 @@ footer a:hover { text-decoration: underline; }
         --colorBrandForeground1:         #479ef5;
         --shadow4: 0 0 2px rgba(0,0,0,0.40), 0 2px 4px rgba(0,0,0,0.50);
     }
+}
+/* Explicit dark: user forced dark (regardless of OS preference) */
+:root[data-theme="dark"] {
+    --colorNeutralBackground1:       #141414;
+    --colorNeutralBackground3:       #212121;
+    --colorNeutralCardBackground:    #1a1a1a;
+    --colorNeutralStroke2:           #2e2e2e;
+    --colorNeutralForeground1:       #f5f5f5;
+    --colorNeutralForeground2:       #d6d6d6;
+    --colorNeutralForeground3:       #adadad;
+    --colorStatusSuccessForeground1: #54b054;
+    --colorStatusDangerForeground1:  #dc626d;
+    --colorBrandForeground1:         #479ef5;
+    --shadow4: 0 0 2px rgba(0,0,0,0.40), 0 2px 4px rgba(0,0,0,0.50);
 }

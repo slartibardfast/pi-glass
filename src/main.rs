@@ -456,6 +456,12 @@ fn render_page(state: &AppState, ui: &UiCookie, refresh_secs: u64) -> String {
     let services_html = render_services(&db, &state.config.services, ui, &resolved_ips);
     let name = &state.config.name;
 
+    let theme_attr = match ui.theme.as_deref() {
+        Some("dark")  => " data-theme=\"dark\"",
+        Some("light") => " data-theme=\"light\"",
+        _             => "",
+    };
+
     let style_head = format!(
         r#"<link rel="stylesheet" href="/static/{}.css">"#,
         state.css_hash,
@@ -464,6 +470,7 @@ fn render_page(state: &AppState, ui: &UiCookie, refresh_secs: u64) -> String {
         include_str!("templates/page.html"),
         name = name,
         refresh_secs = refresh_secs,
+        theme_attr = theme_attr,
         style_head = style_head,
         services_html = services_html,
         favicon_svg_route = state.favicon_svg_route,
@@ -482,7 +489,7 @@ fn render_page(state: &AppState, ui: &UiCookie, refresh_secs: u64) -> String {
         html.push_str("</pre></details>");
     }
 
-    html.push_str(r##"<footer>Made with &#10084;&#65039; by <a href="mailto:david@connol.ly">David Connolly</a> &amp; <a href="https://claude.ai">Claude</a> &middot; <a href="https://github.com/slartibardfast/pi-glass">pi-glass</a></footer>"##);
+    html.push_str(&format!(r##"<footer>Made with &#10084;&#65039; by <a href="mailto:david@connol.ly">David Connolly</a> &amp; <a href="https://claude.ai">Claude</a> &middot; <a href="https://github.com/slartibardfast/pi-glass">pi-glass v{VERSION}</a></footer>"##));
     html.push_str(&format!(r#"<script src="/static/{}.js"></script>"#, state.js_hash));
     html.push_str("</body></html>");
 
