@@ -90,7 +90,9 @@ async fn main() {
             timestamp  TEXT NOT NULL,
             status     TEXT NOT NULL,
             latency_ms REAL
-        )",
+        );
+        CREATE INDEX IF NOT EXISTS idx_ping_host_ts ON ping_results(host, timestamp);
+        CREATE INDEX IF NOT EXISTS idx_ping_host_id ON ping_results(host, id DESC);",
     )
     .expect("Failed to create table");
 
