@@ -50,6 +50,13 @@ pub const APP_CSS: &str = include_str!("app.css");
 pub const INLINE_JS: &str = include_str!("app.js");
 pub const SPARKS_WOFF2: &[u8] = include_bytes!("fonts/Sparks-Bar-Medium.woff2");
 
+pub const FAVICON_ICO: &[u8] = include_bytes!("favicon/favicon.ico");
+pub const FAVICON_SVG: &str = include_str!("favicon/favicon.svg");
+pub const APPLE_TOUCH_ICON: &[u8] = include_bytes!("favicon/apple-touch-icon.png");
+pub const FAVICON_192: &[u8] = include_bytes!("favicon/favicon-192.png");
+pub const FAVICON_512: &[u8] = include_bytes!("favicon/favicon-512.png");
+pub const WEB_MANIFEST: &str = include_str!("favicon/site.webmanifest");
+
 // --- Config types ---
 
 #[derive(Deserialize, Clone)]
