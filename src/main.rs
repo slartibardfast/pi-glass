@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use axum::body::Bytes;
 use axum::extract::State;
 use chrono::Local;
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OpenFlags};
 use surge_ping::{Client, Config as PingConfig, PingIdentifier, PingSequence};
 
 use tower_http::compression::CompressionLayer;
@@ -42,6 +42,7 @@ fn content_hash(data: &str) -> String {
 
 struct AppState {
     db: Mutex<Connection>,
+    read_db: Mutex<Connection>,
     config: Config,
     config_toml: Option<String>,
     resolved_ips: Mutex<HashMap<String, Option<String>>>,
@@ -158,12 +159,19 @@ async fn main() {
     )
     .expect("Failed to create table");
 
+    let read_conn = Connection::open_with_flags(
+        &config.db_path,
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .unwrap_or_else(|e| panic!("Failed to open read-only database at {}: {e}", config.db_path));
+
     let css_hash = content_hash(&format!("{TOKENS_CSS}\n{APP_CSS}"));
     let js_hash = content_hash(INLINE_JS);
 
     let effective_refresh = config.poll_interval_secs as usize;
     let state = Arc::new(AppState {
         db: Mutex::new(conn),
+        read_db: Mutex::new(read_conn),
         config,
         config_toml,
         resolved_ips: Mutex::new(HashMap::new()),
@@ -350,7 +358,7 @@ async fn poll_loop(state: Arc<AppState>) {
 // --- Page rendering ---
 
 fn render_page(state: &AppState, ui: &UiCookie, refresh_secs: u64) -> String {
-    let db = state.db.lock().unwrap();
+    let db = state.read_db.lock().unwrap();
     let resolved_ips = state.resolved_ips.lock().unwrap().clone();
 
     let services_html = render_services(&db, &state.config.services, ui, &resolved_ips);
