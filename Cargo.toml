@@ -1,6 +1,6 @@
 [package]
 name = "pi-glass"
-version = "2.0.0-alpha.3"
+version = "2.0.0-alpha.4"
 edition = "2021"
 
 [[bin]]
@@ -15,7 +15,7 @@ path = "src/bin/mailer.rs"
 openwrt = []
 
 [dependencies]
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1", features = ["macros", "net", "rt", "rt-multi-thread", "time"] }
 axum = "0.8"
 rusqlite = { version = "0.32", features = ["bundled"] }
 surge-ping = "0.8"
