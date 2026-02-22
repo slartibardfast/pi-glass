@@ -292,6 +292,9 @@ async fn poll_loop(state: Arc<AppState>) {
     loop {
         interval.tick().await;
 
+        let mut rows: Vec<(String, String, &'static str, Option<f64>)> = Vec::new();
+        let mut new_resolved: Vec<(String, Option<String>)> = Vec::new();
+
         // LAN hosts
         for host in &state.config.hosts {
             let addr: IpAddr = host.addr.parse().unwrap_or_else(|e| {
@@ -307,13 +310,7 @@ async fn poll_loop(state: Arc<AppState>) {
                 Err(_) => ("DOWN", None),
             };
 
-            let now = Local::now().to_rfc3339();
-            let db = state.db.lock().unwrap();
-            db.execute(
-                "INSERT INTO ping_results (host, timestamp, status, latency_ms) VALUES (?1, ?2, ?3, ?4)",
-                params![host.addr, now, status, latency_ms],
-            )
-            .unwrap();
+            rows.push((host.addr.clone(), Local::now().to_rfc3339(), status, latency_ms));
         }
 
         // External services
@@ -328,28 +325,40 @@ async fn poll_loop(state: Arc<AppState>) {
                 }
             };
 
-            let status = if up { "UP" } else { "DOWN" };
-            let key = format!("svc:{}", svc.label);
-            let now = Local::now().to_rfc3339();
-            {
-                let db = state.db.lock().unwrap();
-                db.execute(
-                    "INSERT INTO ping_results (host, timestamp, status, latency_ms) VALUES (?1, ?2, ?3, ?4)",
-                    params![key, now, status, latency_ms],
-                )
-                .unwrap();
-            }
-            state.resolved_ips.lock().unwrap().insert(svc.label.clone(), resolved_ip);
+            rows.push((
+                format!("svc:{}", svc.label),
+                Local::now().to_rfc3339(),
+                if up { "UP" } else { "DOWN" },
+                latency_ms,
+            ));
+            new_resolved.push((svc.label.clone(), resolved_ip));
         }
 
-        // Purge old records
+        // Update resolved IPs
+        {
+            let mut ips = state.resolved_ips.lock().unwrap();
+            for (label, ip) in new_resolved {
+                ips.insert(label, ip);
+            }
+        }
+
+        // Single transaction: all INSERTs + purge (one fsync)
         let cutoff = (Local::now() - chrono::Duration::days(state.config.retention_days)).to_rfc3339();
-        let db = state.db.lock().unwrap();
-        db.execute(
-            "DELETE FROM ping_results WHERE timestamp < ?1",
-            params![cutoff],
-        )
-        .unwrap();
+        {
+            let mut db = state.db.lock().unwrap();
+            let tx = db.transaction().unwrap();
+            for (host, now, status, latency_ms) in &rows {
+                tx.execute(
+                    "INSERT INTO ping_results (host, timestamp, status, latency_ms) VALUES (?1, ?2, ?3, ?4)",
+                    params![host, now, status, latency_ms],
+                ).unwrap();
+            }
+            tx.execute(
+                "DELETE FROM ping_results WHERE timestamp < ?1",
+                params![cutoff],
+            ).unwrap();
+            tx.commit().unwrap();
+        }
 
         pre_render_and_advance(&state);
         seq = seq.wrapping_add(1);
