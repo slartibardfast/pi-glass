@@ -164,6 +164,7 @@ async fn main() {
         OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
     )
     .unwrap_or_else(|e| panic!("Failed to open read-only database at {}: {e}", config.db_path));
+    read_conn.busy_timeout(Duration::from_secs(5)).expect("Failed to set busy timeout");
 
     let css_hash = content_hash(&format!("{TOKENS_CSS}\n{APP_CSS}"));
     let js_hash = content_hash(INLINE_JS);
