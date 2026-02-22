@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::net::IpAddr;
@@ -49,6 +49,7 @@ struct AppState {
     poll_generation: AtomicUsize,
     page_cache: RwLock<PageCache>,
     effective_refresh_secs: AtomicUsize,
+    recent_cookies: Mutex<VecDeque<String>>,
     css_hash: String,
     js_hash: String,
 }
@@ -179,6 +180,7 @@ async fn main() {
         poll_generation: AtomicUsize::new(0),
         page_cache: RwLock::new(PageCache { generation: 0, entries: HashMap::new() }),
         effective_refresh_secs: AtomicUsize::new(effective_refresh),
+        recent_cookies: Mutex::new(VecDeque::new()),
         css_hash,
         js_hash,
     });
@@ -437,10 +439,23 @@ fn pre_render_and_advance(state: &AppState) {
     "".hash(&mut hasher);
     let default_hash = hasher.finish();
 
+    // Pre-render recent cookie variants before acquiring the write lock
+    let recent: Vec<String> = state.recent_cookies.lock().unwrap().iter().cloned().collect();
+    let mut extra: Vec<(u64, Bytes)> = Vec::with_capacity(recent.len());
+    for cookie_str in &recent {
+        let cookie_html = render_page(state, &parse_ui_cookie(cookie_str), effective);
+        let mut h = DefaultHasher::new();
+        cookie_str.hash(&mut h);
+        extra.push((h.finish(), Bytes::from(cookie_html)));
+    }
+
     let mut cache = state.page_cache.write().unwrap();
     cache.generation += 1;
     cache.entries.clear();
     cache.entries.insert(default_hash, Bytes::from(html));
+    for (hash, bytes) in extra {
+        cache.entries.insert(hash, bytes);
+    }
     let new_gen = cache.generation;
     drop(cache);
 
@@ -499,7 +514,18 @@ async fn handler(
         }
     }
 
-    // Cache miss — render fresh (cookie-specific view)
+    // Cache miss — record cookie for pre-rendering on next poll cycle
+    if !cookie_str.is_empty() {
+        let mut recent = state.recent_cookies.lock().unwrap();
+        if !recent.iter().any(|s| s == cookie_str) {
+            if recent.len() >= 3 {
+                recent.pop_back();
+            }
+            recent.push_front(cookie_str.to_string());
+        }
+    }
+
+    // Render fresh (cookie-specific view)
     let refresh = state.effective_refresh_secs.load(Ordering::Acquire) as u64;
     let html = render_page(&state, &parse_ui_cookie(cookie_str), refresh);
     let body = Bytes::from(html);
