@@ -309,10 +309,10 @@ async fn check_dns(nameserver: &str, timeout_secs: u64) -> (bool, Option<f64>, O
         return (false, None, None);
     }
 
-    let start = Instant::now();
     if sock.send(&DNS_QUERY).await.is_err() {
         return (false, None, None);
     }
+    let start = Instant::now();
 
     let mut buf = [0u8; 512];
     // nameserver IS the IP — no resolution to show

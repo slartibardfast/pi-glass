@@ -39,7 +39,15 @@ Remove imports/variables/functions that YOUR changes made unused.
 Don't remove pre-existing dead code unless asked.
 The test: Every changed line should trace directly to the user's request.
 
-4. Security: No HTTP Input to Disk
+4. Timing Accuracy
+Place `Instant::now()` as close to the actual network operation as possible.
+
+- For UDP (DNS): start the timer AFTER `send()` returns, so the measurement is server RTT only.
+- For TCP: start the timer BEFORE `connect()`, since the handshake IS the operation.
+- For ICMP: surge_ping measures RTT internally; our wrapping code adds no noise.
+- Never include socket setup, bind, connect (to a UDP peer), or hostname resolution in the latency figure.
+
+5. Security: No HTTP Input to Disk
 This is a hard design constraint, not a guideline.
 
 No data from an HTTP request may ever be written to the server's filesystem.
