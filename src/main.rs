@@ -6,12 +6,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
-use std::future::Future;
-use std::pin::Pin;
-
 use axum::body::Bytes;
 use axum::extract::State;
-use futures::future::join_all;
 use chrono::Local;
 use rusqlite::{params, Connection, OpenFlags};
 use surge_ping::{Client, Config as PingConfig, PingIdentifier, PingSequence};
@@ -345,62 +341,45 @@ async fn poll_loop(state: Arc<AppState>) {
     loop {
         interval.tick().await;
 
-        // Build all check futures — client_ref is &Client which is Copy; each async move
-        // captures a copy of the pointer. join_all polls within the current task (no spawning)
-        // — correct on single-core MIPS.
-        type CheckResult = (String, String, &'static str, Option<f64>, Option<(String, Option<String>)>);
-        let client_ref = &client;
-        let mut futs: Vec<Pin<Box<dyn Future<Output = CheckResult> + '_>>> = Vec::new();
+        let mut rows: Vec<(String, String, &'static str, Option<f64>)> = Vec::new();
+        let mut new_resolved: Vec<(String, Option<String>)> = Vec::new();
 
-        // LAN hosts
+        // LAN hosts — sequential, one ping at a time.
+        // Avoids ICMP bursts that overwhelm embedded routers; avoids identifier
+        // collisions (all concurrent pingers shared PingIdentifier(0xAB)); avoids
+        // latency inflation from sharing one event-loop thread across N sockets.
+        // Each check yields at .await so the HTTP runtime stays responsive.
+        // PingIdentifier(seq) changes each cycle — stale replies from a previous
+        // timed-out cycle can't be mistaken for the current one.
         for host in &state.config.hosts {
             let addr: IpAddr = host.addr.parse().unwrap_or_else(|e| {
                 panic!("Invalid host address '{}': {e}", host.addr)
             });
-            let addr_str = host.addr.clone();
-            let timeout = state.config.ping_timeout_secs;
-            futs.push(Box::pin(async move {
-                let mut pinger = client_ref.pinger(addr, PingIdentifier(0xAB)).await;
-                pinger.timeout(Duration::from_secs(timeout));
-                let payload = [0u8; 56];
-                let (status, latency_ms) = match pinger.ping(PingSequence(seq), &payload).await {
-                    Ok((_pkt, dur)) => ("UP", Some(dur.as_secs_f64() * 1000.0)),
-                    Err(_) => ("DOWN", None),
-                };
-                (addr_str, Local::now().to_rfc3339(), status, latency_ms, None)
-            }));
+            let mut pinger = client.pinger(addr, PingIdentifier(seq)).await;
+            pinger.timeout(Duration::from_secs(state.config.ping_timeout_secs));
+            let payload = [0u8; 56];
+            let (status, latency_ms) = match pinger.ping(PingSequence(seq), &payload).await {
+                Ok((_pkt, dur)) => ("UP", Some(dur.as_secs_f64() * 1000.0)),
+                Err(_) => ("DOWN", None),
+            };
+            rows.push((host.addr.clone(), Local::now().to_rfc3339(), status, latency_ms));
         }
 
-        // External services
+        // External services — sequential, same reasoning.
         for svc in &state.config.services {
-            let target = svc.target.clone();
-            let check_type = svc.check.clone();
-            let label = svc.label.clone();
-            let timeout = state.config.ping_timeout_secs;
-            futs.push(Box::pin(async move {
-                let (up, latency_ms, resolved_ip) = match check_type.as_str() {
-                    "ping" => check_ping(client_ref, &target, seq, timeout).await,
-                    "dns"  => check_dns(&target, timeout).await,
-                    "tcp"  => check_tcp(&target, timeout).await,
-                    other  => {
-                        eprintln!("Unknown check type '{}' for service '{}'", other, label);
-                        (false, None, None)
-                    }
-                };
-                let key = format!("svc:{}", label);
-                let status = if up { "UP" } else { "DOWN" };
-                (key, Local::now().to_rfc3339(), status, latency_ms, Some((label, resolved_ip)))
-            }));
-        }
-
-        // Run all checks concurrently; collect results
-        let mut rows: Vec<(String, String, &'static str, Option<f64>)> = Vec::new();
-        let mut new_resolved: Vec<(String, Option<String>)> = Vec::new();
-        for (key, now, status, latency_ms, svc_info) in join_all(futs).await {
-            rows.push((key, now, status, latency_ms));
-            if let Some((label, resolved_ip)) = svc_info {
-                new_resolved.push((label, resolved_ip));
-            }
+            let (up, latency_ms, resolved_ip) = match svc.check.as_str() {
+                "ping" => check_ping(&client, &svc.target, seq, state.config.ping_timeout_secs).await,
+                "dns"  => check_dns(&svc.target, state.config.ping_timeout_secs).await,
+                "tcp"  => check_tcp(&svc.target, state.config.ping_timeout_secs).await,
+                other  => {
+                    eprintln!("Unknown check type '{}' for service '{}'", other, svc.label);
+                    (false, None, None)
+                }
+            };
+            let key = format!("svc:{}", svc.label);
+            let status = if up { "UP" } else { "DOWN" };
+            rows.push((key, Local::now().to_rfc3339(), status, latency_ms));
+            new_resolved.push((svc.label.clone(), resolved_ip));
         }
 
         // Update resolved IPs

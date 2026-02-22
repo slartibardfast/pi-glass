@@ -172,6 +172,36 @@ can then graph long-term trends without pi-glass needing to store them.
 
 ---
 
+## Concurrent poll checks — lessons learned (v1.12.0 → v1.13.0)
+
+v1.12.0 introduced `futures::future::join_all` to run all checks concurrently.
+This caused dropped pings, false DOWN readings, and inflated latency. Root causes:
+
+1. **PingIdentifier collision** — all concurrent pingers shared `PingIdentifier(0xAB)`.
+   Surge_ping demultiplexes ICMP replies by identifier; with N pingers sharing one
+   identifier, replies were misassigned between hosts.
+
+2. **ICMP burst** — N pings sent simultaneously overwhelmed the network stack on
+   embedded routers with ICMP rate limiting.
+
+3. **Latency inflation** — on a single-core `current_thread` runtime, the event loop
+   services N concurrent socket operations at once. Each check's measured latency
+   included scheduler overhead from all the others.
+
+v1.13.0 reverted to sequential loops with `pinger.timeout()` already set per-check.
+This IS correct cooperative multitasking for single-core: one task runs, yields at
+`.await`, the runtime services other work (HTTP) in between. Total worst-case time
+is `N × timeout_secs`, which is acceptable for typical poll intervals.
+
+**If true concurrency is needed in future** (e.g., very large host counts):
+- Use `FuturesUnordered` with a semaphore to limit concurrent pings to ≤3
+- Assign unique `PingIdentifier` per host (index-based, not a shared constant)
+- Stagger ping start times by 50–100ms to avoid ICMP burst
+- Keep DNS/TCP fully concurrent (no shared socket resource)
+- Test on actual embedded hardware before shipping
+
+---
+
 ## Priority order (suggested)
 
 1. **HTTP check** — closes biggest monitoring gap; most users have HTTP services
