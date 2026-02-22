@@ -12,8 +12,6 @@ use chrono::Local;
 use rusqlite::{params, Connection, OpenFlags};
 use surge_ping::{Client, Config as PingConfig, PingIdentifier, PingSequence};
 
-use tower_http::compression::CompressionLayer;
-
 use pi_glass::*;
 
 // Minimal DNS A-query for google.com
@@ -86,24 +84,42 @@ async fn serve_font() -> impl axum::response::IntoResponse {
     )
 }
 
-async fn serve_css() -> impl axum::response::IntoResponse {
-    (
-        [
-            (axum::http::header::CONTENT_TYPE, "text/css; charset=utf-8"),
-            (axum::http::header::CACHE_CONTROL, "public, max-age=31536000, immutable"),
-        ],
-        format!("{TOKENS_CSS}\n{APP_CSS}"),
-    )
+fn encoding_response(
+    content_type: &'static str,
+    accept: &str,
+    br: &'static [u8],
+    gz: &'static [u8],
+    plain: &'static [u8],
+) -> axum::response::Response {
+    use axum::http::header::{CACHE_CONTROL, CONTENT_ENCODING, CONTENT_TYPE, VARY};
+    use axum::response::IntoResponse;
+    let cache = "public, max-age=31536000, immutable";
+    let vary  = "Accept-Encoding";
+    if accept.contains("br") {
+        ([(CONTENT_TYPE, content_type), (CACHE_CONTROL, cache),
+          (CONTENT_ENCODING, "br"), (VARY, vary)], Bytes::from_static(br)).into_response()
+    } else if accept.contains("gzip") {
+        ([(CONTENT_TYPE, content_type), (CACHE_CONTROL, cache),
+          (CONTENT_ENCODING, "gzip"), (VARY, vary)], Bytes::from_static(gz)).into_response()
+    } else {
+        ([(CONTENT_TYPE, content_type), (CACHE_CONTROL, cache),
+          (VARY, vary)], Bytes::from_static(plain)).into_response()
+    }
 }
 
-async fn serve_js() -> impl axum::response::IntoResponse {
-    (
-        [
-            (axum::http::header::CONTENT_TYPE, "text/javascript; charset=utf-8"),
-            (axum::http::header::CACHE_CONTROL, "public, max-age=31536000, immutable"),
-        ],
-        INLINE_JS,
-    )
+async fn serve_css(headers: axum::http::HeaderMap) -> axum::response::Response {
+    let accept = headers.get(axum::http::header::ACCEPT_ENCODING)
+        .and_then(|v| v.to_str().ok()).unwrap_or("");
+    encoding_response("text/css; charset=utf-8", accept, CSS_BR, CSS_GZ,
+                       concat!(include_str!("../web/dist/tokens.css"), "\n",
+                               include_str!("app.css")).as_bytes())
+}
+
+async fn serve_js(headers: axum::http::HeaderMap) -> axum::response::Response {
+    let accept = headers.get(axum::http::header::ACCEPT_ENCODING)
+        .and_then(|v| v.to_str().ok()).unwrap_or("");
+    encoding_response("text/javascript; charset=utf-8", accept, JS_BR, JS_GZ,
+                       INLINE_JS.as_bytes())
 }
 
 async fn serve_favicon_ico() -> impl axum::response::IntoResponse {
@@ -215,12 +231,6 @@ async fn main() {
     let css_route = format!("/static/{}.css", state.css_hash);
     let js_route = format!("/static/{}.js", state.js_hash);
 
-    let compression = match state.config.compression.as_str() {
-        "gzip" => CompressionLayer::new().br(false).gzip(true),
-        "none" => CompressionLayer::new().br(false).gzip(false),
-        _ => CompressionLayer::new().br(true).gzip(false),
-    };
-
     let app = axum::Router::new()
         .route("/", axum::routing::get(handler))
         .route(&css_route, axum::routing::get(serve_css))
@@ -255,7 +265,6 @@ async fn main() {
                  b.clone())
             }
         }))
-        .layer(compression)
         .layer(axum::middleware::from_fn(cors_headers))
         .with_state(state.clone());
 
@@ -263,7 +272,7 @@ async fn main() {
         .await
         .unwrap_or_else(|e| panic!("Failed to bind {}: {e}", state.config.listen));
 
-    eprintln!("Listening on {} (compression: {})", state.config.listen, state.config.compression);
+    eprintln!("Listening on {}", state.config.listen);
     axum::serve(listener, app).await.unwrap();
 }
 

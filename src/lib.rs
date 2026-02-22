@@ -50,6 +50,12 @@ pub const APP_CSS: &str = include_str!("app.css");
 pub const INLINE_JS: &str = include_str!("app.js");
 pub const SPARKS_WOFF2: &[u8] = include_bytes!("fonts/Sparks-Bar-Medium.woff2");
 
+// Pre-compressed at build time; served directly with Content-Encoding header.
+pub const CSS_BR: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/combined.css.br"));
+pub const CSS_GZ: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/combined.css.gz"));
+pub const JS_BR:  &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/app.js.br"));
+pub const JS_GZ:  &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/app.js.gz"));
+
 pub const FAVICON_ICO: &[u8] = include_bytes!("favicon/favicon.ico");
 pub const FAVICON_SVG: &str = include_str!("favicon/favicon.svg");
 pub const APPLE_TOUCH_ICON: &[u8] = include_bytes!("favicon/apple-touch-icon.png");
