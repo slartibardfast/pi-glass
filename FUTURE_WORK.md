@@ -36,22 +36,12 @@ in-memory (a `HashMap<String, &'static str>` in `AppState`). No DB reads needed.
 
 ---
 
-## Precompressed static assets
+## Precompressed static assets ✓ Done in v1.14.0
 
-Currently `tower-http` compresses CSS/JS/font per-request in the HTTP worker.
-These are static `&'static [u8]` — compress them once at compile time.
-
-Approach:
-- `build.rs` reads each asset, brotli-compresses it, writes to `OUT_DIR`
-- `include_bytes!(concat!(env!("OUT_DIR"), "/app.css.br"))` in `lib.rs`
-- Serve the raw bytes with `Content-Encoding: br`, skip `CompressionLayer`
-  for those routes
-
-Result: zero CPU for compression on every request. Biggest gain on MIPS where
-the `#[tokio::main]` multi-thread runtime is doing HTTP + brotli simultaneously.
-
-Deps: one `brotli` crate in `[build-dependencies]` only — not in the runtime
-binary.
+`build.rs` compresses CSS and JS (brotli + gzip) at compile time.
+`tower-http` removed. `encoding_response()` serves the pre-compressed bytes
+with `Content-Encoding: br/gzip` based on the client's `Accept-Encoding` header.
+Both encodings are pre-built; the client gets the best it supports.
 
 ---
 
@@ -202,12 +192,47 @@ is `N × timeout_secs`, which is acceptable for typical poll intervals.
 
 ---
 
+## DB / render optimisations ✓ Done in v2.0.0
+
+Seven items addressed based on deep review:
+
+1. **`prepare_cached` throughout** — `rusqlite::Connection::prepare_cached`
+   memoises compiled statements by SQL string. Was ~50 `prepare` calls per render
+   (parse + compile on every call). Now: zero recompilation for repeated SQL.
+
+2. **Single-window-stats query** — `query_all_window_stats` replaces four
+   separate `query_window_stats` calls (5m/1h/24h/7d) with one query using CASE
+   expressions for each time window. 4 DB round-trips → 1 per host/service.
+
+3. **Eliminated double `query_latest_status` per service** — `render_service_card`
+   fetched status for the UP/DOWN badge count; `render_service_item` fetched it
+   again for the item display. Status is now fetched once in `render_service_card`
+   and passed through as parameters. Saves N queries per render.
+
+4. **Dead `WEB_MANIFEST` const removed** — `include_str!` was compiling the
+   static manifest file into the binary. Manifest is generated dynamically at
+   startup (to embed hashed icon routes); the static version was unused dead bytes.
+
+5. **`compression` config field removed** — Documented in config template as
+   `"br"/"gzip"/"none"` but the serving code always negotiated via
+   `Accept-Encoding` regardless. Removing avoids user confusion. Compression is
+   now automatic: brotli if the client supports it, gzip as fallback, plain last.
+
+6. **Single-pass `render_services` filter** — Was three separate
+   `.filter().collect()` passes over the services slice. Now a single loop that
+   pushes each service into the correct bucket.
+
+7. **Single-pass `html_escape`** — Was three chained `replace()` calls (three
+   heap allocations + three string scans). Now a single char-by-char loop into a
+   pre-sized buffer.
+
+---
+
 ## Priority order (suggested)
 
 1. **HTTP check** — closes biggest monitoring gap; most users have HTTP services
 2. **Down alerting** — changes the tool from passive dashboard to active monitor
-3. **Precompressed assets** — pure perf win, no behaviour change, safe on MIPS
-4. **WAL checkpoint control** — flash longevity on OpenWrt
-5. **Events table + data bucketing** — better history, smaller DB
-6. **Health endpoint** — operational nicety
-7. **Config hot-reload / Prometheus** — nice-to-have, low urgency
+3. **WAL checkpoint control** — flash longevity on OpenWrt
+4. **Events table + data bucketing** — better history, smaller DB
+5. **Health endpoint** — operational nicety
+6. **Config hot-reload / Prometheus** — nice-to-have, low urgency

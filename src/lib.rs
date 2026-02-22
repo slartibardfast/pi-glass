@@ -61,7 +61,6 @@ pub const FAVICON_SVG: &str = include_str!("favicon/favicon.svg");
 pub const APPLE_TOUCH_ICON: &[u8] = include_bytes!("favicon/apple-touch-icon.png");
 pub const FAVICON_192: &[u8] = include_bytes!("favicon/favicon-192.png");
 pub const FAVICON_512: &[u8] = include_bytes!("favicon/favicon-512.png");
-pub const WEB_MANIFEST: &str = include_str!("favicon/site.webmanifest");
 
 // --- Config types ---
 
@@ -110,8 +109,6 @@ pub struct Config {
     pub retention_days: i64,
     #[serde(default = "default_wal_mode")]
     pub wal_mode: bool,
-    #[serde(default = "default_compression")]
-    pub compression: String,
     #[serde(default = "default_hosts")]
     pub hosts: Vec<Host>,
     #[serde(default = "default_services")]
@@ -127,7 +124,6 @@ fn default_poll_interval() -> u64 { DEFAULT_POLL_INTERVAL_SECS }
 fn default_ping_timeout() -> u64 { DEFAULT_PING_TIMEOUT_SECS }
 fn default_retention_days() -> i64 { DEFAULT_RETENTION_DAYS }
 fn default_wal_mode() -> bool { !cfg!(feature = "openwrt") }
-fn default_compression() -> String { "br".to_string() }
 fn default_mail_subject() -> String { "pi-glass status".to_string() }
 fn default_send_at() -> String { "08:00".to_string() }
 
@@ -160,7 +156,6 @@ impl Default for Config {
             ping_timeout_secs: default_ping_timeout(),
             retention_days: default_retention_days(),
             wal_mode: default_wal_mode(),
-            compression: default_compression(),
             hosts: default_hosts(),
             services: default_services(),
             mailer: None,
@@ -232,7 +227,16 @@ pub fn bootstrap_config_from_exe() {
 }
 
 pub fn html_escape(s: &str) -> String {
-    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            c   => out.push(c),
+        }
+    }
+    out
 }
 
 pub fn default_config_toml() -> String {
@@ -261,9 +265,6 @@ ping_timeout_secs = 2
 
 # Days of history to retain in the database
 retention_days = 7
-
-# HTTP response compression: "br" (default), "gzip", or "none"
-compression = "br"
 
 # Enable WAL journal mode for concurrent read/write access.
 # Default: true on standard Linux builds, false on OpenWrt builds.
@@ -371,49 +372,75 @@ pub struct WindowStats {
     pub max_ms: Option<f64>,
 }
 
-pub fn query_window_stats(db: &Connection, host: &str, minutes: i64) -> WindowStats {
-    let cutoff = (Local::now() - chrono::Duration::minutes(minutes)).to_rfc3339();
-    let mut stmt = db
-        .prepare(
-            "SELECT
-                COUNT(*) as total,
-                SUM(CASE WHEN status = 'UP' THEN 1 ELSE 0 END) as up_count,
-                AVG(CASE WHEN status = 'UP' THEN latency_ms END) as avg_ms,
-                MIN(CASE WHEN status = 'UP' THEN latency_ms END) as min_ms,
-                MAX(CASE WHEN status = 'UP' THEN latency_ms END) as max_ms
-            FROM ping_results
-            WHERE host = ?1 AND timestamp > ?2",
-        )
-        .unwrap();
+/// Query all four time-window stats for a host in a single DB pass.
+/// Returns (5m, 1h, 24h, 7d) WindowStats.
+pub fn query_all_window_stats(db: &Connection, host: &str) -> (WindowStats, WindowStats, WindowStats, WindowStats) {
+    let now = Local::now();
+    let c5m  = (now - chrono::Duration::minutes(5)).to_rfc3339();
+    let c1h  = (now - chrono::Duration::minutes(60)).to_rfc3339();
+    let c24h = (now - chrono::Duration::minutes(1440)).to_rfc3339();
+    let c7d  = (now - chrono::Duration::minutes(10080)).to_rfc3339();
 
-    stmt.query_row(params![host, cutoff], |row| {
-        let total: i64 = row.get(0)?;
-        let up_count: Option<i64> = row.get(1)?;
-        Ok(WindowStats {
-            uptime_pct: match (total, up_count) {
-                (t, Some(u)) if t > 0 => Some(u as f64 * 100.0 / t as f64),
-                _ => None,
-            },
-            avg_ms: row.get(2)?,
-            min_ms: row.get(3)?,
-            max_ms: row.get(4)?,
-        })
-    })
+    let result = db.prepare_cached(
+        "SELECT
+            SUM(CASE WHEN timestamp > ?2 THEN 1 ELSE 0 END),
+            SUM(CASE WHEN timestamp > ?2 AND status='UP' THEN 1 ELSE 0 END),
+            AVG(CASE WHEN timestamp > ?2 AND status='UP' THEN latency_ms END),
+            MIN(CASE WHEN timestamp > ?2 AND status='UP' THEN latency_ms END),
+            MAX(CASE WHEN timestamp > ?2 AND status='UP' THEN latency_ms END),
+            SUM(CASE WHEN timestamp > ?3 THEN 1 ELSE 0 END),
+            SUM(CASE WHEN timestamp > ?3 AND status='UP' THEN 1 ELSE 0 END),
+            AVG(CASE WHEN timestamp > ?3 AND status='UP' THEN latency_ms END),
+            MIN(CASE WHEN timestamp > ?3 AND status='UP' THEN latency_ms END),
+            MAX(CASE WHEN timestamp > ?3 AND status='UP' THEN latency_ms END),
+            SUM(CASE WHEN timestamp > ?4 THEN 1 ELSE 0 END),
+            SUM(CASE WHEN timestamp > ?4 AND status='UP' THEN 1 ELSE 0 END),
+            AVG(CASE WHEN timestamp > ?4 AND status='UP' THEN latency_ms END),
+            MIN(CASE WHEN timestamp > ?4 AND status='UP' THEN latency_ms END),
+            MAX(CASE WHEN timestamp > ?4 AND status='UP' THEN latency_ms END),
+            COUNT(*),
+            SUM(CASE WHEN status='UP' THEN 1 ELSE 0 END),
+            AVG(CASE WHEN status='UP' THEN latency_ms END),
+            MIN(CASE WHEN status='UP' THEN latency_ms END),
+            MAX(CASE WHEN status='UP' THEN latency_ms END)
+        FROM ping_results WHERE host = ?1 AND timestamp > ?5",
+    )
     .unwrap()
+    .query_row(params![host, c5m, c1h, c24h, c7d], |row| {
+        let mk = |base: usize| -> rusqlite::Result<WindowStats> {
+            let total: Option<i64> = row.get(base)?;
+            let up: Option<i64> = row.get(base + 1)?;
+            Ok(WindowStats {
+                uptime_pct: match (total.unwrap_or(0), up) {
+                    (t, Some(u)) if t > 0 => Some(u as f64 * 100.0 / t as f64),
+                    _ => None,
+                },
+                avg_ms: row.get(base + 2)?,
+                min_ms: row.get(base + 3)?,
+                max_ms: row.get(base + 4)?,
+            })
+        };
+        Ok((mk(0)?, mk(5)?, mk(10)?, mk(15)?))
+    });
+
+    let empty = || WindowStats { uptime_pct: None, avg_ms: None, min_ms: None, max_ms: None };
+    result.unwrap_or_else(|_| (empty(), empty(), empty(), empty()))
 }
 
 pub fn query_latest_status(db: &Connection, host: &str) -> (String, Option<f64>) {
-    db.query_row(
+    db.prepare_cached(
         "SELECT status, latency_ms FROM ping_results WHERE host = ?1 ORDER BY id DESC LIMIT 1",
-        params![host],
-        |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<f64>>(1)?)),
     )
+    .unwrap()
+    .query_row(params![host], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, Option<f64>>(1)?))
+    })
     .unwrap_or(("--".to_string(), None))
 }
 
 pub fn query_recent_checks(db: &Connection, host: &str, limit: i64) -> Vec<(String, String, Option<f64>)> {
     let mut stmt = db
-        .prepare(
+        .prepare_cached(
             "SELECT timestamp, status, latency_ms FROM ping_results WHERE host = ?1 ORDER BY id DESC LIMIT ?2",
         )
         .unwrap();
@@ -438,7 +465,7 @@ pub fn query_card_uptime(db: &Connection, keys: &[String], minutes: i64) -> Opti
         "SELECT COUNT(*), SUM(CASE WHEN status='UP' THEN 1 ELSE 0 END)
          FROM ping_results WHERE host IN ({placeholders}) AND timestamp > ?"
     );
-    let mut stmt = db.prepare(&sql).unwrap();
+    let mut stmt = db.prepare_cached(&sql).unwrap();
     stmt.query_row(
         rusqlite::params_from_iter(
             keys.iter().map(|s| s.as_str()).chain(std::iter::once(cutoff.as_str()))
@@ -609,10 +636,7 @@ pub fn render_stats_section(
 }
 
 pub fn render_host(db: &Connection, host: &Host, user_open: Option<bool>) -> String {
-    let w5m  = query_window_stats(db, &host.addr, 5);
-    let w1h  = query_window_stats(db, &host.addr, 60);
-    let w24h = query_window_stats(db, &host.addr, 1440);
-    let w7d  = query_window_stats(db, &host.addr, 10080);
+    let (w5m, w1h, w24h, w7d) = query_all_window_stats(db, &host.addr);
     let (cur_status, latency) = query_latest_status(db, &host.addr);
     let tier = state_tier(&cur_status);
     let latency_str = latency.map_or_else(String::new, |ms| format!("{ms:.0}ms"));
@@ -660,10 +684,9 @@ pub fn render_host(db: &Connection, host: &Host, user_open: Option<bool>) -> Str
     )
 }
 
-pub fn render_service_item(db: &Connection, svc: &Service, id: &str, user_open: Option<bool>, resolved_ip: Option<&str>) -> String {
+pub fn render_service_item(db: &Connection, svc: &Service, id: &str, user_open: Option<bool>, resolved_ip: Option<&str>, cur_status: &str, latency: Option<f64>) -> String {
     let key = format!("svc:{}", svc.label);
-    let (cur_status, latency) = query_latest_status(db, &key);
-    let (dot_class, dot_char) = match cur_status.as_str() {
+    let (dot_class, dot_char) = match cur_status {
         "UP"   => ("up",      "✓"),
         "DOWN" => ("down",    "✗"),
         _      => ("unknown", "–"),
@@ -675,11 +698,8 @@ pub fn render_service_item(db: &Connection, svc: &Service, id: &str, user_open: 
     };
     let latency_str = fmt_latency(latency);
 
-    let w5m  = query_window_stats(db, &key, 5);
-    let w1h  = query_window_stats(db, &key, 60);
-    let w24h = query_window_stats(db, &key, 1440);
-    let w7d  = query_window_stats(db, &key, 10080);
-    let tier = state_tier(&cur_status);
+    let (w5m, w1h, w24h, w7d) = query_all_window_stats(db, &key);
+    let tier = state_tier(cur_status);
     let uptime_badge = fmt_pct(w1h.uptime_pct);
     let streak_title = format!("1h uptime: {uptime_badge}");
     let open_attr = if user_open.unwrap_or(false) { " open" } else { "" };
@@ -730,12 +750,13 @@ pub fn render_service_card(db: &Connection, title: &str, svcs: &[&Service], star
         return String::new();
     }
 
-    let mut up_count = 0usize;
-    for svc in svcs {
-        let key = format!("svc:{}", svc.label);
-        let (status, _) = query_latest_status(db, &key);
-        if status == "UP" { up_count += 1; }
-    }
+    // Single pass: fetch status+latency for all services — used for both the
+    // UP/DOWN badge count and passed through to each item renderer (no double query).
+    let statuses: Vec<(String, Option<f64>)> = svcs.iter()
+        .map(|svc| query_latest_status(db, &format!("svc:{}", svc.label)))
+        .collect();
+
+    let up_count = statuses.iter().filter(|(s, _)| s == "UP").count();
     let total = svcs.len();
     let keys: Vec<String> = svcs.iter().map(|s| format!("svc:{}", s.label)).collect();
     let card_uptime = query_card_uptime(db, &keys, 60);
@@ -766,11 +787,11 @@ pub fn render_service_card(db: &Connection, title: &str, svcs: &[&Service], star
         right_html  = right_html,
         open_attr  = open_attr,
     );
-    for (i, svc) in svcs.iter().enumerate() {
+    for (i, (svc, (cur_status, latency))) in svcs.iter().zip(statuses.iter()).enumerate() {
         let id = format!("svc-{}", start_idx + i);
         let item_open = open_svc_items.map(|set| set.contains(&id));
         let resolved_ip = resolved_ips.get(&svc.label).and_then(|o| o.as_deref());
-        html.push_str(&render_service_item(db, svc, &id, item_open, resolved_ip));
+        html.push_str(&render_service_item(db, svc, &id, item_open, resolved_ip, cur_status, *latency));
     }
     html.push_str("</div></details>");
     html
@@ -781,9 +802,17 @@ pub fn render_services(db: &Connection, services: &[Service], ui: &UiCookie, res
         return String::new();
     }
 
-    let mut web: Vec<&Service>  = services.iter().filter(|s| s.check == "tcp").collect();
-    let mut icmp: Vec<&Service> = services.iter().filter(|s| s.check == "ping").collect();
-    let mut dns: Vec<&Service>  = services.iter().filter(|s| s.check == "dns").collect();
+    let mut web: Vec<&Service>  = Vec::new();
+    let mut icmp: Vec<&Service> = Vec::new();
+    let mut dns: Vec<&Service>  = Vec::new();
+    for svc in services {
+        match svc.check.as_str() {
+            "tcp"  => web.push(svc),
+            "ping" => icmp.push(svc),
+            "dns"  => dns.push(svc),
+            _      => {}
+        }
+    }
     web.sort_by(|a, b| a.label.to_lowercase().cmp(&b.label.to_lowercase()));
     icmp.sort_by(|a, b| a.label.to_lowercase().cmp(&b.label.to_lowercase()));
     dns.sort_by(|a, b| a.label.to_lowercase().cmp(&b.label.to_lowercase()));
