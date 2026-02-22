@@ -266,3 +266,20 @@ footer a:hover { text-decoration: underline; }
 @media (max-width: 480px) {
     .spark, .spark-pad { display: none; }
 }
+
+/* Dark theme — overrides only the tokens actually used; all else inherits from tokens.css */
+@media (prefers-color-scheme: dark) {
+    :root {
+        --colorNeutralBackground1:       #141414;
+        --colorNeutralBackground3:       #212121;
+        --colorNeutralCardBackground:    #1a1a1a;
+        --colorNeutralStroke2:           #2e2e2e;
+        --colorNeutralForeground1:       #f5f5f5;
+        --colorNeutralForeground2:       #d6d6d6;
+        --colorNeutralForeground3:       #adadad;
+        --colorStatusSuccessForeground1: #54b054;
+        --colorStatusDangerForeground1:  #dc626d;
+        --colorBrandForeground1:         #479ef5;
+        --shadow4: 0 0 2px rgba(0,0,0,0.40), 0 2px 4px rgba(0,0,0,0.50);
+    }
+}
