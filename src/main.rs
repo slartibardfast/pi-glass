@@ -3,7 +3,7 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::net::IpAddr;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
 use axum::body::Bytes;
@@ -47,7 +47,7 @@ struct AppState {
     config_toml: Option<String>,
     resolved_ips: Mutex<HashMap<String, Option<String>>>,
     poll_generation: AtomicUsize,
-    page_cache: Mutex<PageCache>,
+    page_cache: RwLock<PageCache>,
     effective_refresh_secs: AtomicUsize,
     css_hash: String,
     js_hash: String,
@@ -177,7 +177,7 @@ async fn main() {
         config_toml,
         resolved_ips: Mutex::new(HashMap::new()),
         poll_generation: AtomicUsize::new(0),
-        page_cache: Mutex::new(PageCache { generation: 0, entries: HashMap::new() }),
+        page_cache: RwLock::new(PageCache { generation: 0, entries: HashMap::new() }),
         effective_refresh_secs: AtomicUsize::new(effective_refresh),
         css_hash,
         js_hash,
@@ -409,7 +409,7 @@ fn pre_render_startup(state: &AppState) {
     let mut hasher = DefaultHasher::new();
     "".hash(&mut hasher);
     let default_hash = hasher.finish();
-    let mut cache = state.page_cache.lock().unwrap();
+    let mut cache = state.page_cache.write().unwrap();
     cache.entries.insert(default_hash, Bytes::from(html));
 }
 
@@ -437,7 +437,7 @@ fn pre_render_and_advance(state: &AppState) {
     "".hash(&mut hasher);
     let default_hash = hasher.finish();
 
-    let mut cache = state.page_cache.lock().unwrap();
+    let mut cache = state.page_cache.write().unwrap();
     cache.generation += 1;
     cache.entries.clear();
     cache.entries.insert(default_hash, Bytes::from(html));
@@ -484,7 +484,7 @@ async fn handler(
 
     // Check in-memory cache
     {
-        let cache = state.page_cache.lock().unwrap();
+        let cache = state.page_cache.read().unwrap();
         if cache.generation == generation {
             if let Some(html) = cache.entries.get(&cookie_hash) {
                 return (
@@ -506,7 +506,7 @@ async fn handler(
 
     // Store in cache only if generation still matches
     {
-        let mut cache = state.page_cache.lock().unwrap();
+        let mut cache = state.page_cache.write().unwrap();
         if cache.generation == generation {
             cache.entries.insert(cookie_hash, body.clone());
         }
