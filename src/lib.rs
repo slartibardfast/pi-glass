@@ -812,10 +812,13 @@ pub fn render_full_page(db: &Connection, config: &Config) -> String {
     let style_head = format!("<style>{TOKENS_CSS}</style>\n<style>{APP_CSS}</style>");
     let mut html = format!(
         include_str!("templates/page.html"),
-        name         = config.name,
-        refresh_secs = config.poll_interval_secs,
-        style_head   = style_head,
-        services_html = services_html,
+        name              = config.name,
+        refresh_secs      = config.poll_interval_secs,
+        style_head        = style_head,
+        services_html     = services_html,
+        favicon_svg_route = "/favicon.svg",
+        apple_touch_route = "/apple-touch-icon.png",
+        manifest_route    = "/site.webmanifest",
     );
 
     for host in &config.hosts {

@@ -44,6 +44,12 @@ fn content_hash(data: &str) -> String {
     format!("{:016x}", h.finish())
 }
 
+fn content_hash_bytes(data: &[u8]) -> String {
+    let mut h = DefaultHasher::new();
+    data.hash(&mut h);
+    format!("{:016x}", h.finish())
+}
+
 struct AppState {
     db: Mutex<Connection>,
     read_db: Mutex<Connection>,
@@ -56,6 +62,9 @@ struct AppState {
     recent_cookies: Mutex<VecDeque<String>>,
     css_hash: String,
     js_hash: String,
+    favicon_svg_route: String,
+    apple_touch_route: String,
+    manifest_route: String,
 }
 
 async fn cors_headers(
@@ -102,33 +111,10 @@ async fn serve_js() -> impl axum::response::IntoResponse {
 }
 
 async fn serve_favicon_ico() -> impl axum::response::IntoResponse {
+    // Fixed URL — browsers auto-probe /favicon.ico; can't hash it.
+    // Short max-age so updated icons are picked up within a day.
     ([(axum::http::header::CONTENT_TYPE, "image/x-icon"),
-      (axum::http::header::CACHE_CONTROL, "public, max-age=31536000, immutable")], FAVICON_ICO)
-}
-
-async fn serve_favicon_svg() -> impl axum::response::IntoResponse {
-    ([(axum::http::header::CONTENT_TYPE, "image/svg+xml"),
-      (axum::http::header::CACHE_CONTROL, "public, max-age=31536000, immutable")], FAVICON_SVG)
-}
-
-async fn serve_apple_touch() -> impl axum::response::IntoResponse {
-    ([(axum::http::header::CONTENT_TYPE, "image/png"),
-      (axum::http::header::CACHE_CONTROL, "public, max-age=31536000, immutable")], APPLE_TOUCH_ICON)
-}
-
-async fn serve_favicon_192() -> impl axum::response::IntoResponse {
-    ([(axum::http::header::CONTENT_TYPE, "image/png"),
-      (axum::http::header::CACHE_CONTROL, "public, max-age=31536000, immutable")], FAVICON_192)
-}
-
-async fn serve_favicon_512() -> impl axum::response::IntoResponse {
-    ([(axum::http::header::CONTENT_TYPE, "image/png"),
-      (axum::http::header::CACHE_CONTROL, "public, max-age=31536000, immutable")], FAVICON_512)
-}
-
-async fn serve_manifest() -> impl axum::response::IntoResponse {
-    ([(axum::http::header::CONTENT_TYPE, "application/manifest+json"),
-      (axum::http::header::CACHE_CONTROL, "public, max-age=31536000, immutable")], WEB_MANIFEST)
+      (axum::http::header::CACHE_CONTROL, "public, max-age=86400")], FAVICON_ICO)
 }
 
 #[tokio::main]
@@ -174,6 +160,30 @@ async fn main() {
     let css_hash = content_hash(&format!("{TOKENS_CSS}\n{APP_CSS}"));
     let js_hash = content_hash(INLINE_JS);
 
+    // Content-hashed routes for icons — browsers get immutable URLs; changing
+    // the asset changes the hash and therefore the URL, busting the cache.
+    let favicon_svg_hash   = content_hash(FAVICON_SVG);
+    let apple_touch_hash   = content_hash_bytes(APPLE_TOUCH_ICON);
+    let favicon_192_hash   = content_hash_bytes(FAVICON_192);
+    let favicon_512_hash   = content_hash_bytes(FAVICON_512);
+
+    let favicon_svg_route  = format!("/static/{}.svg",          favicon_svg_hash);
+    let apple_touch_route  = format!("/static/{}-touch.png",    apple_touch_hash);
+    let favicon_192_route  = format!("/static/{}-192.png",      favicon_192_hash);
+    let favicon_512_route  = format!("/static/{}-512.png",      favicon_512_hash);
+
+    // Manifest is generated at startup so it can reference the hashed icon paths.
+    let manifest_content = format!(
+        "{{\n  \"name\": \"pi-glass\",\n  \"short_name\": \"pi-glass\",\n  \
+         \"icons\": [\n    {{ \"src\": \"{}\", \"sizes\": \"192x192\", \"type\": \"image/png\" }},\n    \
+         {{ \"src\": \"{}\", \"sizes\": \"512x512\", \"type\": \"image/png\" }}\n  ],\n  \
+         \"theme_color\": \"#a3b2e8\",\n  \"background_color\": \"#111111\",\n  \
+         \"display\": \"standalone\",\n  \"start_url\": \"/\"\n}}\n",
+        favicon_192_route, favicon_512_route,
+    );
+    let manifest_route = format!("/static/{}.webmanifest", content_hash(&manifest_content));
+    let manifest_bytes = Bytes::from(manifest_content.into_bytes());
+
     let effective_refresh = config.poll_interval_secs as usize;
     let state = Arc::new(AppState {
         db: Mutex::new(conn),
@@ -187,6 +197,9 @@ async fn main() {
         recent_cookies: Mutex::new(VecDeque::new()),
         css_hash,
         js_hash,
+        favicon_svg_route: favicon_svg_route.clone(),
+        apple_touch_route: apple_touch_route.clone(),
+        manifest_route: manifest_route.clone(),
     });
 
     pre_render_startup(&state);
@@ -218,11 +231,34 @@ async fn main() {
         .route(&js_route, axum::routing::get(serve_js))
         .route("/font/sparks.woff2", axum::routing::get(serve_font))
         .route("/favicon.ico", axum::routing::get(serve_favicon_ico))
-        .route("/favicon.svg", axum::routing::get(serve_favicon_svg))
-        .route("/apple-touch-icon.png", axum::routing::get(serve_apple_touch))
-        .route("/favicon-192.png", axum::routing::get(serve_favicon_192))
-        .route("/favicon-512.png", axum::routing::get(serve_favicon_512))
-        .route("/site.webmanifest", axum::routing::get(serve_manifest))
+        .route(&favicon_svg_route, axum::routing::get(|| async {
+            ([( axum::http::header::CONTENT_TYPE, "image/svg+xml"),
+              (axum::http::header::CACHE_CONTROL, "public, max-age=31536000, immutable")],
+             Bytes::from_static(FAVICON_SVG.as_bytes()))
+        }))
+        .route(&apple_touch_route, axum::routing::get(|| async {
+            ([(axum::http::header::CONTENT_TYPE, "image/png"),
+              (axum::http::header::CACHE_CONTROL, "public, max-age=31536000, immutable")],
+             Bytes::from_static(APPLE_TOUCH_ICON))
+        }))
+        .route(&favicon_192_route, axum::routing::get(|| async {
+            ([(axum::http::header::CONTENT_TYPE, "image/png"),
+              (axum::http::header::CACHE_CONTROL, "public, max-age=31536000, immutable")],
+             Bytes::from_static(FAVICON_192))
+        }))
+        .route(&favicon_512_route, axum::routing::get(|| async {
+            ([(axum::http::header::CONTENT_TYPE, "image/png"),
+              (axum::http::header::CACHE_CONTROL, "public, max-age=31536000, immutable")],
+             Bytes::from_static(FAVICON_512))
+        }))
+        .route(&manifest_route, axum::routing::get({
+            let b = manifest_bytes;
+            move || async move {
+                ([(axum::http::header::CONTENT_TYPE, "application/manifest+json"),
+                  (axum::http::header::CACHE_CONTROL, "public, max-age=31536000, immutable")],
+                 b.clone())
+            }
+        }))
         .layer(compression)
         .layer(axum::middleware::from_fn(cors_headers))
         .with_state(state.clone());
@@ -417,6 +453,9 @@ fn render_page(state: &AppState, ui: &UiCookie, refresh_secs: u64) -> String {
         refresh_secs = refresh_secs,
         style_head = style_head,
         services_html = services_html,
+        favicon_svg_route = state.favicon_svg_route,
+        apple_touch_route = state.apple_touch_route,
+        manifest_route = state.manifest_route,
     );
 
     for host in &state.config.hosts {
