@@ -1,10 +1,12 @@
 use std::collections::HashMap;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::net::IpAddr;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use axum::extract::State;
-use axum::response::Html;
 use chrono::Local;
 use rusqlite::{params, Connection};
 use surge_ping::{Client, Config as PingConfig, PingIdentifier, PingSequence};
@@ -24,11 +26,18 @@ const DNS_QUERY: [u8; 28] = [
     0x00, 0x01, // class IN
 ];
 
+struct PageCache {
+    generation: u64,
+    entries: HashMap<u64, String>,
+}
+
 struct AppState {
     db: Mutex<Connection>,
     config: Config,
     config_toml: Option<String>,
     resolved_ips: Mutex<HashMap<String, Option<String>>>,
+    poll_generation: AtomicU64,
+    page_cache: Mutex<PageCache>,
 }
 
 async fn cors_headers(
@@ -90,6 +99,8 @@ async fn main() {
         config,
         config_toml,
         resolved_ips: Mutex::new(HashMap::new()),
+        poll_generation: AtomicU64::new(0),
+        page_cache: Mutex::new(PageCache { generation: 0, entries: HashMap::new() }),
     });
 
     tokio::spawn(poll_loop(state.clone()));
@@ -241,17 +252,64 @@ async fn poll_loop(state: Arc<AppState>) {
         )
         .unwrap();
 
+        state.poll_generation.fetch_add(1, Ordering::Release);
         seq = seq.wrapping_add(1);
     }
 }
 
 // --- HTTP handler ---
 
-async fn handler(State(state): State<Arc<AppState>>, headers: axum::http::HeaderMap) -> Html<String> {
+async fn handler(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+) -> axum::response::Response {
+    use axum::http::{header, StatusCode};
+    use axum::response::IntoResponse;
+
     let cookie_str = headers
-        .get(axum::http::header::COOKIE)
+        .get(header::COOKIE)
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
+
+    let generation = state.poll_generation.load(Ordering::Acquire);
+
+    let mut hasher = DefaultHasher::new();
+    cookie_str.hash(&mut hasher);
+    let cookie_hash = hasher.finish();
+
+    let etag = format!("\"{generation}-{cookie_hash}\"");
+
+    // Fast path: 304 Not Modified
+    if let Some(inm) = headers.get(header::IF_NONE_MATCH).and_then(|v| v.to_str().ok()) {
+        if inm == etag {
+            return (
+                StatusCode::NOT_MODIFIED,
+                [
+                    (header::CACHE_CONTROL, "no-cache"),
+                    (header::ETAG, &etag),
+                ],
+            ).into_response();
+        }
+    }
+
+    // Check in-memory cache
+    {
+        let cache = state.page_cache.lock().unwrap();
+        if cache.generation == generation {
+            if let Some(html) = cache.entries.get(&cookie_hash) {
+                return (
+                    [
+                        (header::CACHE_CONTROL, "no-cache".to_string()),
+                        (header::ETAG, etag.clone()),
+                        (header::CONTENT_TYPE, "text/html; charset=utf-8".to_string()),
+                    ],
+                    html.clone(),
+                ).into_response();
+            }
+        }
+    }
+
+    // Cache miss — render fresh
     let ui = parse_ui_cookie(cookie_str);
     let db = state.db.lock().unwrap();
     let resolved_ips = state.resolved_ips.lock().unwrap().clone();
@@ -267,23 +325,39 @@ async fn handler(State(state): State<Arc<AppState>>, headers: axum::http::Header
         services_html = services_html,
     );
 
-    // LAN host cards
     for host in &state.config.hosts {
         let user_open = ui.open_hosts.as_ref().map(|set| set.contains(&host.addr));
         html.push_str(&render_host(&db, host, user_open));
     }
 
-    // Config block — only shown when no config file was found
     if let Some(ref toml) = state.config_toml {
         html.push_str(r#"<details class="config-card" open><summary class="config-summary">config.toml — save this file to get started</summary><pre class="config-block">"#);
         html.push_str(&html_escape(toml));
         html.push_str("</pre></details>");
     }
 
-    // Footer
     html.push_str(r##"<footer>Made with &#10084;&#65039; by <a href="mailto:david@connol.ly">David Connolly</a> &amp; <a href="https://claude.ai">Claude</a> &middot; <a href="https://github.com/slartibardfast/pi-glass">pi-glass</a></footer>"##);
-
     html.push_str(&format!("<script>{INLINE_JS}</script>"));
     html.push_str("</body></html>");
-    Html(html)
+
+    drop(db);
+
+    // Store in cache
+    {
+        let mut cache = state.page_cache.lock().unwrap();
+        if cache.generation != generation {
+            cache.entries.clear();
+            cache.generation = generation;
+        }
+        cache.entries.insert(cookie_hash, html.clone());
+    }
+
+    (
+        [
+            (header::CACHE_CONTROL, "no-cache".to_string()),
+            (header::ETAG, etag),
+            (header::CONTENT_TYPE, "text/html; charset=utf-8".to_string()),
+        ],
+        html,
+    ).into_response()
 }
