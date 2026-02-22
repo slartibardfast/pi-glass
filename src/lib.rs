@@ -372,59 +372,48 @@ pub struct WindowStats {
     pub max_ms: Option<f64>,
 }
 
-/// Query all four time-window stats for a host in a single DB pass.
-/// Returns (5m, 1h, 24h, 7d) WindowStats.
-pub fn query_all_window_stats(db: &Connection, host: &str) -> (WindowStats, WindowStats, WindowStats, WindowStats) {
-    let now = Local::now();
-    let c5m  = (now - chrono::Duration::minutes(5)).to_rfc3339();
-    let c1h  = (now - chrono::Duration::minutes(60)).to_rfc3339();
-    let c24h = (now - chrono::Duration::minutes(1440)).to_rfc3339();
-    let c7d  = (now - chrono::Duration::minutes(10080)).to_rfc3339();
-
+/// Query stats for one time window. Uses prepare_cached — zero recompilation cost.
+/// Four separate calls (5m/1h/24h/7d) are deliberately preferred over a single
+/// combined query: each call does a tight index range scan reading only the rows
+/// in that window. A combined query would always scan the full 7d window (the
+/// largest cutoff in the WHERE clause) for every window, doing more I/O and more
+/// CASE evaluations per row — strictly worse on embedded hardware.
+pub fn query_window_stats(db: &Connection, host: &str, minutes: i64) -> WindowStats {
+    let cutoff = (Local::now() - chrono::Duration::minutes(minutes)).to_rfc3339();
     let result = db.prepare_cached(
         "SELECT
-            SUM(CASE WHEN timestamp > ?2 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN timestamp > ?2 AND status='UP' THEN 1 ELSE 0 END),
-            AVG(CASE WHEN timestamp > ?2 AND status='UP' THEN latency_ms END),
-            MIN(CASE WHEN timestamp > ?2 AND status='UP' THEN latency_ms END),
-            MAX(CASE WHEN timestamp > ?2 AND status='UP' THEN latency_ms END),
-            SUM(CASE WHEN timestamp > ?3 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN timestamp > ?3 AND status='UP' THEN 1 ELSE 0 END),
-            AVG(CASE WHEN timestamp > ?3 AND status='UP' THEN latency_ms END),
-            MIN(CASE WHEN timestamp > ?3 AND status='UP' THEN latency_ms END),
-            MAX(CASE WHEN timestamp > ?3 AND status='UP' THEN latency_ms END),
-            SUM(CASE WHEN timestamp > ?4 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN timestamp > ?4 AND status='UP' THEN 1 ELSE 0 END),
-            AVG(CASE WHEN timestamp > ?4 AND status='UP' THEN latency_ms END),
-            MIN(CASE WHEN timestamp > ?4 AND status='UP' THEN latency_ms END),
-            MAX(CASE WHEN timestamp > ?4 AND status='UP' THEN latency_ms END),
             COUNT(*),
-            SUM(CASE WHEN status='UP' THEN 1 ELSE 0 END),
-            AVG(CASE WHEN status='UP' THEN latency_ms END),
-            MIN(CASE WHEN status='UP' THEN latency_ms END),
-            MAX(CASE WHEN status='UP' THEN latency_ms END)
-        FROM ping_results WHERE host = ?1 AND timestamp > ?5",
+            SUM(CASE WHEN status = 'UP' THEN 1 ELSE 0 END),
+            AVG(CASE WHEN status = 'UP' THEN latency_ms END),
+            MIN(CASE WHEN status = 'UP' THEN latency_ms END),
+            MAX(CASE WHEN status = 'UP' THEN latency_ms END)
+        FROM ping_results WHERE host = ?1 AND timestamp > ?2",
     )
     .unwrap()
-    .query_row(params![host, c5m, c1h, c24h, c7d], |row| {
-        let mk = |base: usize| -> rusqlite::Result<WindowStats> {
-            let total: Option<i64> = row.get(base)?;
-            let up: Option<i64> = row.get(base + 1)?;
-            Ok(WindowStats {
-                uptime_pct: match (total.unwrap_or(0), up) {
-                    (t, Some(u)) if t > 0 => Some(u as f64 * 100.0 / t as f64),
-                    _ => None,
-                },
-                avg_ms: row.get(base + 2)?,
-                min_ms: row.get(base + 3)?,
-                max_ms: row.get(base + 4)?,
-            })
-        };
-        Ok((mk(0)?, mk(5)?, mk(10)?, mk(15)?))
+    .query_row(params![host, cutoff], |row| {
+        let total: i64 = row.get(0)?;
+        let up: Option<i64> = row.get(1)?;
+        Ok(WindowStats {
+            uptime_pct: match (total, up) {
+                (t, Some(u)) if t > 0 => Some(u as f64 * 100.0 / t as f64),
+                _ => None,
+            },
+            avg_ms: row.get(2)?,
+            min_ms: row.get(3)?,
+            max_ms: row.get(4)?,
+        })
     });
+    result.unwrap_or(WindowStats { uptime_pct: None, avg_ms: None, min_ms: None, max_ms: None })
+}
 
-    let empty = || WindowStats { uptime_pct: None, avg_ms: None, min_ms: None, max_ms: None };
-    result.unwrap_or_else(|_| (empty(), empty(), empty(), empty()))
+/// Convenience wrapper: returns all four standard windows in one call.
+pub fn query_all_window_stats(db: &Connection, host: &str) -> (WindowStats, WindowStats, WindowStats, WindowStats) {
+    (
+        query_window_stats(db, host, 5),
+        query_window_stats(db, host, 60),
+        query_window_stats(db, host, 1440),
+        query_window_stats(db, host, 10080),
+    )
 }
 
 pub fn query_latest_status(db: &Connection, host: &str) -> (String, Option<f64>) {
