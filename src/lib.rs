@@ -102,7 +102,7 @@ pub struct Config {
     pub ping_timeout_secs: u64,
     #[serde(default = "default_retention_days")]
     pub retention_days: i64,
-    #[serde(default)]
+    #[serde(default = "default_wal_mode")]
     pub wal_mode: bool,
     #[serde(default = "default_compression")]
     pub compression: String,
@@ -120,6 +120,7 @@ pub fn default_db_path() -> String { format!("{}/pi-glass.db", data_dir()) }
 fn default_poll_interval() -> u64 { DEFAULT_POLL_INTERVAL_SECS }
 fn default_ping_timeout() -> u64 { DEFAULT_PING_TIMEOUT_SECS }
 fn default_retention_days() -> i64 { DEFAULT_RETENTION_DAYS }
+fn default_wal_mode() -> bool { !cfg!(feature = "openwrt") }
 fn default_compression() -> String { "br".to_string() }
 fn default_mail_subject() -> String { "pi-glass status".to_string() }
 fn default_send_at() -> String { "08:00".to_string() }
@@ -152,7 +153,7 @@ impl Default for Config {
             poll_interval_secs: default_poll_interval(),
             ping_timeout_secs: default_ping_timeout(),
             retention_days: default_retention_days(),
-            wal_mode: false,
+            wal_mode: default_wal_mode(),
             compression: default_compression(),
             hosts: default_hosts(),
             services: default_services(),
@@ -258,8 +259,9 @@ retention_days = 7
 # HTTP response compression: "br" (default), "gzip", or "none"
 compression = "br"
 
-# Enable WAL journal mode for concurrent read/write access (default: false)
-# Requires filesystem support for shared memory — not supported on all Pi mounts.
+# Enable WAL journal mode for concurrent read/write access.
+# Default: true on standard Linux builds, false on OpenWrt builds.
+# Disable if your filesystem doesn't support shared memory (some Pi/NAS mounts).
 # wal_mode = true
 
 # ── LAN Hosts ────────────────────────────────────────────────────

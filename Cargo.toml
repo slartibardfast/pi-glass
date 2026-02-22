@@ -1,6 +1,6 @@
 [package]
 name = "pi-glass"
-version = "1.7.1"
+version = "1.8.0"
 edition = "2021"
 
 [[bin]]
@@ -10,6 +10,9 @@ path = "src/main.rs"
 [[bin]]
 name = "pi-glass-mailer"
 path = "src/bin/mailer.rs"
+
+[features]
+openwrt = []
 
 [dependencies]
 tokio = { version = "1", features = ["full"] }
