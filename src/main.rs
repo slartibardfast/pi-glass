@@ -11,6 +11,8 @@ use chrono::Local;
 use rusqlite::{params, Connection};
 use surge_ping::{Client, Config as PingConfig, PingIdentifier, PingSequence};
 
+use tower_http::compression::CompressionLayer;
+
 use pi_glass::*;
 
 // Minimal DNS A-query for google.com
@@ -143,11 +145,18 @@ async fn main() {
     let css_route = format!("/static/{}.css", state.css_hash);
     let js_route = format!("/static/{}.js", state.js_hash);
 
+    let compression = match state.config.compression.as_str() {
+        "gzip" => CompressionLayer::new().br(false).gzip(true),
+        "none" => CompressionLayer::new().br(false).gzip(false),
+        _ => CompressionLayer::new().br(true).gzip(false),
+    };
+
     let app = axum::Router::new()
         .route("/", axum::routing::get(handler))
         .route(&css_route, axum::routing::get(serve_css))
         .route(&js_route, axum::routing::get(serve_js))
         .route("/font/sparks.woff2", axum::routing::get(serve_font))
+        .layer(compression)
         .layer(axum::middleware::from_fn(cors_headers))
         .with_state(state.clone());
 
@@ -155,7 +164,7 @@ async fn main() {
         .await
         .unwrap_or_else(|e| panic!("Failed to bind {}: {e}", state.config.listen));
 
-    eprintln!("Listening on {}", state.config.listen);
+    eprintln!("Listening on {} (compression: {})", state.config.listen, state.config.compression);
     axum::serve(listener, app).await.unwrap();
 }
 

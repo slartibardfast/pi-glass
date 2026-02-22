@@ -97,6 +97,8 @@ pub struct Config {
     pub retention_days: i64,
     #[serde(default)]
     pub wal_mode: bool,
+    #[serde(default = "default_compression")]
+    pub compression: String,
     #[serde(default = "default_hosts")]
     pub hosts: Vec<Host>,
     #[serde(default = "default_services")]
@@ -111,6 +113,7 @@ pub fn default_db_path() -> String { format!("{}/pi-glass.db", data_dir()) }
 fn default_poll_interval() -> u64 { DEFAULT_POLL_INTERVAL_SECS }
 fn default_ping_timeout() -> u64 { DEFAULT_PING_TIMEOUT_SECS }
 fn default_retention_days() -> i64 { DEFAULT_RETENTION_DAYS }
+fn default_compression() -> String { "br".to_string() }
 fn default_mail_subject() -> String { "pi-glass status".to_string() }
 fn default_send_at() -> String { "08:00".to_string() }
 
@@ -143,6 +146,7 @@ impl Default for Config {
             ping_timeout_secs: default_ping_timeout(),
             retention_days: default_retention_days(),
             wal_mode: false,
+            compression: default_compression(),
             hosts: default_hosts(),
             services: default_services(),
             mailer: None,
@@ -243,6 +247,9 @@ ping_timeout_secs = 2
 
 # Days of history to retain in the database
 retention_days = 7
+
+# HTTP response compression: "br" (default), "gzip", or "none"
+compression = "br"
 
 # Enable WAL journal mode for concurrent read/write access (default: false)
 # Requires filesystem support for shared memory — not supported on all Pi mounts.
