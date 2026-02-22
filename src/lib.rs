@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::fmt::Write;
 use chrono::Local;
 use rusqlite::{params, Connection};
 use serde::Deserialize;
@@ -495,7 +496,8 @@ pub fn fmt_sparkline(checks: &[(String, String, Option<f64>)]) -> String {
     // Transparent gap bars fill the left side so every sparkline is SPARK_BARS wide.
     let pad_count = SPARK_BARS.saturating_sub(checks.len());
     let pad_str = if pad_count > 0 {
-        let pads = vec!["50"; pad_count].join(",");
+        let mut pads = String::with_capacity(pad_count * 3);
+        for i in 0..pad_count { if i > 0 { pads.push(','); } pads.push_str("50"); }
         format!(r#"<span class="spark spark-pad">{{{pads}}}</span>"#)
     } else {
         String::new()
@@ -509,10 +511,15 @@ pub fn fmt_sparkline(checks: &[(String, String, Option<f64>)]) -> String {
         .filter_map(|(_, s, l)| if s == "UP" { *l } else { None })
         .collect();
 
-    let (values, title): (Vec<String>, String) = if latencies.is_empty() {
+    let title: String;
+    let mut values = String::with_capacity(ordered.len() * 3);
+    if latencies.is_empty() {
         // All DOWN — floor bars, no latency stats
-        (ordered.iter().map(|_| "0".to_string()).collect(),
-         format!("{} checks · all down", checks.len()))
+        title = format!("{} checks · all down", checks.len());
+        for (i, _) in ordered.iter().enumerate() {
+            if i > 0 { values.push(','); }
+            values.push('0');
+        }
     } else {
         let count = latencies.len() as f64;
         let avg = latencies.iter().sum::<f64>() / count;
@@ -524,27 +531,27 @@ pub fn fmt_sparkline(checks: &[(String, String, Option<f64>)]) -> String {
         let max = latencies.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
         let range = max - min;
 
-        let vals = ordered.iter().map(|(_, status, latency)| {
+        for (i, (_, status, latency)) in ordered.iter().enumerate() {
+            if i > 0 { values.push(','); }
             if status == "UP" {
-                let norm = if range < 0.5 {
-                    50u32  // flat mid-line for very consistent latency
+                let norm: u32 = if range < 0.5 {
+                    50  // flat mid-line for very consistent latency
                 } else {
                     let v = latency.unwrap_or(min);
                     (1.0 + (v - min) / range * 99.0).round() as u32
                 };
-                norm.to_string()
+                write!(values, "{norm}").unwrap();
             } else {
-                "0".to_string()  // DOWN → floor bar
+                values.push('0');  // DOWN → floor bar
             }
-        }).collect();
-        let t = format!(
+        }
+        title = format!(
             "{} checks · avg {avg:.0}ms ±{stddev:.0} · min {min:.0}ms · max {max:.0}ms",
             checks.len()
         );
-        (vals, t)
-    };
+    }
 
-    format!(r#"{pad_str}<span class="spark" title="{title}">{{{}}}</span>"#, values.join(","))
+    format!(r#"{pad_str}<span class="spark" title="{title}">{{{values}}}</span>"#)
 }
 
 // --- Tier / status helpers ---
@@ -651,15 +658,16 @@ pub fn render_host(db: &Connection, host: &Host, user_open: Option<bool>) -> Str
     let mut detail_rows = String::new();
     for (ts, status, latency) in &rows[..rows.len().min(20)] {
         let time = if ts.len() >= 23 { &ts[11..23] } else { ts.as_str() };
-        let latency_str = latency.map_or(String::new(), |v| format!("{v:.1}ms"));
         let (dot_class, dot_char) = match status.as_str() {
             "UP"   => ("status-up",   "✓"),
             "DOWN" => ("status-down", "✗"),
             _      => ("",            "–"),
         };
-        detail_rows.push_str(&format!(
-            r#"<div class="pg-row"><span>{time}</span><span>{latency_str}</span><span class="{dot_class}">{dot_char}</span></div>"#
-        ));
+        if let Some(v) = latency {
+            write!(detail_rows, r#"<div class="pg-row"><span>{time}</span><span>{v:.1}ms</span><span class="{dot_class}">{dot_char}</span></div>"#).unwrap();
+        } else {
+            write!(detail_rows, r#"<div class="pg-row"><span>{time}</span><span></span><span class="{dot_class}">{dot_char}</span></div>"#).unwrap();
+        }
     }
     let stats_section = render_stats_section(&w5m, &w1h, &w24h, &w7d, "Last 20 pings", "Time", &detail_rows);
 
@@ -697,16 +705,17 @@ pub fn render_service_item(db: &Connection, svc: &Service, id: &str, user_open: 
     let spark_str = fmt_sparkline(&recent);
     let mut detail_rows = String::new();
     for (ts, s, lat) in &recent[..recent.len().min(10)] {
-        let lat_str = lat.map_or(String::new(), |v| format!("{v:.1}ms"));
         let time = if ts.len() >= 23 { &ts[11..23] } else { ts.as_str() };
         let (dot_class, dot_char) = match s.as_str() {
             "UP"   => ("status-up",   "✓"),
             "DOWN" => ("status-down", "✗"),
             _      => ("",            "–"),
         };
-        detail_rows.push_str(&format!(
-            r#"<div class="pg-row"><span>{time}</span><span>{lat_str}</span><span class="{dot_class}">{dot_char}</span></div>"#
-        ));
+        if let Some(v) = lat {
+            write!(detail_rows, r#"<div class="pg-row"><span>{time}</span><span>{v:.1}ms</span><span class="{dot_class}">{dot_char}</span></div>"#).unwrap();
+        } else {
+            write!(detail_rows, r#"<div class="pg-row"><span>{time}</span><span></span><span class="{dot_class}">{dot_char}</span></div>"#).unwrap();
+        }
     }
     let stats_section = render_stats_section(&w5m, &w1h, &w24h, &w7d, "Last 10 checks", "Time", &detail_rows);
     let resolved_ip_html = match resolved_ip {
@@ -802,10 +811,6 @@ pub fn render_services(db: &Connection, services: &[Service], ui: &UiCookie, res
             _      => {}
         }
     }
-    web.sort_by(|a, b| a.label.to_lowercase().cmp(&b.label.to_lowercase()));
-    icmp.sort_by(|a, b| a.label.to_lowercase().cmp(&b.label.to_lowercase()));
-    dns.sort_by(|a, b| a.label.to_lowercase().cmp(&b.label.to_lowercase()));
-
     let svc_open = |title: &str| -> bool {
         match &ui.open_svc_cards {
             None => true,

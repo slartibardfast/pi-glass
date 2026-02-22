@@ -134,7 +134,15 @@ async fn main() {
     #[cfg(target_os = "windows")]
     bootstrap_config_from_exe();
 
-    let (config, config_toml) = load_config();
+    let (mut config, config_toml) = load_config();
+
+    // Sort services once at startup: categories in render order (tcp→ping→dns),
+    // then alphabetically within each — eliminates repeated to_lowercase sorts per render.
+    let check_order = |c: &str| match c { "tcp" => 0u8, "ping" => 1, "dns" => 2, _ => 3 };
+    config.services.sort_by(|a, b| {
+        check_order(&a.check).cmp(&check_order(&b.check))
+            .then_with(|| a.label.to_lowercase().cmp(&b.label.to_lowercase()))
+    });
 
     if let Some(parent) = std::path::Path::new(&config.db_path).parent() {
         std::fs::create_dir_all(parent)
@@ -148,7 +156,7 @@ async fn main() {
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0;")
             .expect("Failed to enable WAL mode");
     }
-    conn.execute_batch("PRAGMA temp_store=MEMORY;")
+    conn.execute_batch("PRAGMA temp_store=MEMORY; PRAGMA cache_size=-4096;")
         .expect("Failed to set temp_store");
 
     conn.execute_batch(
@@ -170,7 +178,7 @@ async fn main() {
     )
     .unwrap_or_else(|e| panic!("Failed to open read-only database at {}: {e}", config.db_path));
     read_conn.busy_timeout(Duration::from_secs(5)).expect("Failed to set busy timeout");
-    read_conn.execute_batch("PRAGMA temp_store=MEMORY;")
+    read_conn.execute_batch("PRAGMA temp_store=MEMORY; PRAGMA cache_size=-8192; PRAGMA mmap_size=134217728;")
         .expect("Failed to set temp_store on read conn");
 
     let css_hash = content_hash(&format!("{TOKENS_CSS}\n{APP_CSS}"));
