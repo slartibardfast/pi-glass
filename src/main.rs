@@ -178,8 +178,18 @@ async fn main() {
     )
     .unwrap_or_else(|e| panic!("Failed to open read-only database at {}: {e}", config.db_path));
     read_conn.busy_timeout(Duration::from_secs(5)).expect("Failed to set busy timeout");
-    read_conn.execute_batch("PRAGMA temp_store=MEMORY; PRAGMA cache_size=-8192; PRAGMA mmap_size=134217728;")
-        .expect("Failed to set temp_store on read conn");
+    // mmap_size: cover the full expected DB — retention × polls/day × targets × ~150 bytes/row.
+    // Sized to config so MIPS devices with 1-2 targets get ~4MB, not 128MB.
+    let num_targets = (config.hosts.len() + config.services.len()).max(1) as u64;
+    let mmap_size = (config.retention_days as u64
+        * (86400 / config.poll_interval_secs.max(1))
+        * num_targets
+        * 150)
+        .max(4 * 1024 * 1024);
+    read_conn.execute_batch(&format!(
+        "PRAGMA temp_store=MEMORY; PRAGMA cache_size=-8192; PRAGMA mmap_size={mmap_size};"
+    ))
+    .expect("Failed to set temp_store on read conn");
 
     let css_hash = content_hash(&format!("{TOKENS_CSS}\n{APP_CSS}"));
     let js_hash = content_hash(INLINE_JS);
