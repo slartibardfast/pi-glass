@@ -63,6 +63,36 @@ async fn serve_font() -> impl axum::response::IntoResponse {
     )
 }
 
+async fn serve_favicon_ico() -> impl axum::response::IntoResponse {
+    ([(axum::http::header::CONTENT_TYPE, "image/x-icon"),
+      (axum::http::header::CACHE_CONTROL, "public, max-age=31536000, immutable")], FAVICON_ICO)
+}
+
+async fn serve_favicon_svg() -> impl axum::response::IntoResponse {
+    ([(axum::http::header::CONTENT_TYPE, "image/svg+xml"),
+      (axum::http::header::CACHE_CONTROL, "public, max-age=31536000, immutable")], FAVICON_SVG)
+}
+
+async fn serve_apple_touch() -> impl axum::response::IntoResponse {
+    ([(axum::http::header::CONTENT_TYPE, "image/png"),
+      (axum::http::header::CACHE_CONTROL, "public, max-age=31536000, immutable")], APPLE_TOUCH_ICON)
+}
+
+async fn serve_favicon_192() -> impl axum::response::IntoResponse {
+    ([(axum::http::header::CONTENT_TYPE, "image/png"),
+      (axum::http::header::CACHE_CONTROL, "public, max-age=31536000, immutable")], FAVICON_192)
+}
+
+async fn serve_favicon_512() -> impl axum::response::IntoResponse {
+    ([(axum::http::header::CONTENT_TYPE, "image/png"),
+      (axum::http::header::CACHE_CONTROL, "public, max-age=31536000, immutable")], FAVICON_512)
+}
+
+async fn serve_manifest() -> impl axum::response::IntoResponse {
+    ([(axum::http::header::CONTENT_TYPE, "application/manifest+json"),
+      (axum::http::header::CACHE_CONTROL, "public, max-age=31536000, immutable")], WEB_MANIFEST)
+}
+
 #[tokio::main]
 async fn main() {
     #[cfg(target_os = "windows")]
@@ -110,6 +140,12 @@ async fn main() {
     let app = axum::Router::new()
         .route("/", axum::routing::get(handler))
         .route("/font/sparks.woff2", axum::routing::get(serve_font))
+        .route("/favicon.ico", axum::routing::get(serve_favicon_ico))
+        .route("/favicon.svg", axum::routing::get(serve_favicon_svg))
+        .route("/apple-touch-icon.png", axum::routing::get(serve_apple_touch))
+        .route("/favicon-192.png", axum::routing::get(serve_favicon_192))
+        .route("/favicon-512.png", axum::routing::get(serve_favicon_512))
+        .route("/site.webmanifest", axum::routing::get(serve_manifest))
         .layer(axum::middleware::from_fn(cors_headers))
         .with_state(state.clone());
 
