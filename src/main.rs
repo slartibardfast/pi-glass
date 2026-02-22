@@ -145,9 +145,11 @@ async fn main() {
         .unwrap_or_else(|e| panic!("Failed to open database at {}: {e}", config.db_path));
 
     if config.wal_mode {
-        conn.execute_batch("PRAGMA journal_mode=WAL;")
+        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0;")
             .expect("Failed to enable WAL mode");
     }
+    conn.execute_batch("PRAGMA temp_store=MEMORY;")
+        .expect("Failed to set temp_store");
 
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS ping_results (
@@ -168,6 +170,8 @@ async fn main() {
     )
     .unwrap_or_else(|e| panic!("Failed to open read-only database at {}: {e}", config.db_path));
     read_conn.busy_timeout(Duration::from_secs(5)).expect("Failed to set busy timeout");
+    read_conn.execute_batch("PRAGMA temp_store=MEMORY;")
+        .expect("Failed to set temp_store on read conn");
 
     let css_hash = content_hash(&format!("{TOKENS_CSS}\n{APP_CSS}"));
     let js_hash = content_hash(INLINE_JS);
@@ -415,6 +419,9 @@ async fn poll_loop(state: Arc<AppState>) {
                 params![cutoff],
             ).unwrap();
             tx.commit().unwrap();
+            if state.config.wal_mode {
+                db.execute_batch("PRAGMA wal_checkpoint(PASSIVE);").unwrap();
+            }
         }
 
         pre_render_and_advance(&state);
