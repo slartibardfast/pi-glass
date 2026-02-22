@@ -462,6 +462,15 @@ fn render_page(state: &AppState, ui: &UiCookie, refresh_secs: u64) -> String {
         _             => "",
     };
 
+    let heading_html = if name == "pi-glass" {
+        format!(
+            r#"<img src="{}" style="height:var(--lineHeightHero700);width:var(--lineHeightHero700);display:block" alt="pi-glass">"#,
+            state.favicon_svg_route,
+        )
+    } else {
+        name.to_string()
+    };
+
     let style_head = format!(
         r#"<link rel="stylesheet" href="/static/{}.css">"#,
         state.css_hash,
@@ -471,6 +480,7 @@ fn render_page(state: &AppState, ui: &UiCookie, refresh_secs: u64) -> String {
         name = name,
         refresh_secs = refresh_secs,
         theme_attr = theme_attr,
+        heading_html = heading_html,
         style_head = style_head,
         services_html = services_html,
         favicon_svg_route = state.favicon_svg_route,

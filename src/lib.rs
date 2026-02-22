@@ -845,12 +845,19 @@ pub fn render_full_page(db: &Connection, config: &Config) -> String {
     let empty_ips: HashMap<String, Option<String>> = HashMap::new();
     let services_html = render_services(db, &config.services, &all_open_ui, &empty_ips);
 
+    let heading_html = if config.name == "pi-glass" {
+        r#"<img src="/favicon.svg" style="height:var(--lineHeightHero700);width:var(--lineHeightHero700);display:block" alt="pi-glass">"#.to_string()
+    } else {
+        config.name.clone()
+    };
+
     let style_head = format!("<style>{TOKENS_CSS}</style>\n<style>{APP_CSS}</style>");
     let mut html = format!(
         include_str!("templates/page.html"),
         name              = config.name,
         refresh_secs      = config.poll_interval_secs,
         theme_attr        = "",
+        heading_html      = heading_html,
         style_head        = style_head,
         services_html     = services_html,
         favicon_svg_route = "/favicon.svg",
