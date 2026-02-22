@@ -793,11 +793,12 @@ pub fn render_full_page(db: &Connection, config: &Config) -> String {
     let empty_ips: HashMap<String, Option<String>> = HashMap::new();
     let services_html = render_services(db, &config.services, &all_open_ui, &empty_ips);
 
+    let style_head = format!("<style>{TOKENS_CSS}</style>\n<style>{APP_CSS}</style>");
     let mut html = format!(
         include_str!("templates/page.html"),
         name         = config.name,
-        tokens_css   = TOKENS_CSS,
-        app_css      = APP_CSS,
+        refresh_secs = config.poll_interval_secs,
+        style_head   = style_head,
         services_html = services_html,
     );
 

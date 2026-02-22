@@ -31,6 +31,12 @@ struct PageCache {
     entries: HashMap<u64, String>,
 }
 
+fn content_hash(data: &str) -> String {
+    let mut h = DefaultHasher::new();
+    data.hash(&mut h);
+    format!("{:016x}", h.finish())
+}
+
 struct AppState {
     db: Mutex<Connection>,
     config: Config,
@@ -38,6 +44,8 @@ struct AppState {
     resolved_ips: Mutex<HashMap<String, Option<String>>>,
     poll_generation: AtomicUsize,
     page_cache: Mutex<PageCache>,
+    css_hash: String,
+    js_hash: String,
 }
 
 async fn cors_headers(
@@ -60,6 +68,26 @@ async fn serve_font() -> impl axum::response::IntoResponse {
             (axum::http::header::CACHE_CONTROL, "public, max-age=31536000, immutable"),
         ],
         SPARKS_WOFF2,
+    )
+}
+
+async fn serve_css() -> impl axum::response::IntoResponse {
+    (
+        [
+            (axum::http::header::CONTENT_TYPE, "text/css; charset=utf-8"),
+            (axum::http::header::CACHE_CONTROL, "public, max-age=31536000, immutable"),
+        ],
+        format!("{TOKENS_CSS}\n{APP_CSS}"),
+    )
+}
+
+async fn serve_js() -> impl axum::response::IntoResponse {
+    (
+        [
+            (axum::http::header::CONTENT_TYPE, "text/javascript; charset=utf-8"),
+            (axum::http::header::CACHE_CONTROL, "public, max-age=31536000, immutable"),
+        ],
+        INLINE_JS,
     )
 }
 
@@ -96,6 +124,9 @@ async fn main() {
     )
     .expect("Failed to create table");
 
+    let css_hash = content_hash(&format!("{TOKENS_CSS}\n{APP_CSS}"));
+    let js_hash = content_hash(INLINE_JS);
+
     let state = Arc::new(AppState {
         db: Mutex::new(conn),
         config,
@@ -103,12 +134,19 @@ async fn main() {
         resolved_ips: Mutex::new(HashMap::new()),
         poll_generation: AtomicUsize::new(0),
         page_cache: Mutex::new(PageCache { generation: 0, entries: HashMap::new() }),
+        css_hash,
+        js_hash,
     });
 
     tokio::spawn(poll_loop(state.clone()));
 
+    let css_route = format!("/static/{}.css", state.css_hash);
+    let js_route = format!("/static/{}.js", state.js_hash);
+
     let app = axum::Router::new()
         .route("/", axum::routing::get(handler))
+        .route(&css_route, axum::routing::get(serve_css))
+        .route(&js_route, axum::routing::get(serve_js))
         .route("/font/sparks.woff2", axum::routing::get(serve_font))
         .layer(axum::middleware::from_fn(cors_headers))
         .with_state(state.clone());
@@ -319,11 +357,15 @@ async fn handler(
     let services_html = render_services(&db, &state.config.services, &ui, &resolved_ips);
     let name = &state.config.name;
 
+    let style_head = format!(
+        r#"<link rel="stylesheet" href="/static/{}.css">"#,
+        state.css_hash,
+    );
     let mut html = format!(
         include_str!("templates/page.html"),
         name = name,
-        tokens_css = TOKENS_CSS,
-        app_css = APP_CSS,
+        refresh_secs = state.config.poll_interval_secs,
+        style_head = style_head,
         services_html = services_html,
     );
 
@@ -339,7 +381,7 @@ async fn handler(
     }
 
     html.push_str(r##"<footer>Made with &#10084;&#65039; by <a href="mailto:david@connol.ly">David Connolly</a> &amp; <a href="https://claude.ai">Claude</a> &middot; <a href="https://github.com/slartibardfast/pi-glass">pi-glass</a></footer>"##);
-    html.push_str(&format!("<script>{INLINE_JS}</script>"));
+    html.push_str(&format!(r#"<script src="/static/{}.js"></script>"#, state.js_hash));
     html.push_str("</body></html>");
 
     drop(db);
